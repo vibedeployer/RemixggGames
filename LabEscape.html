@@ -1,0 +1,4520 @@
+<!-- Spacebar background-start guard added: prevents waves starting unless HubScene is active -->
+
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Penguin Escape</title>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.0/dist/phaser.js"></script>
+    <style>
+      @font-face {
+        font-family: "Fobble";
+        src: url("https://artificialisle.github.io/font/Fobble_regular-Regular%20(1)%20(1).otf")
+          format("opentype");
+      }
+    </style>
+    <style>
+      @font-face {
+        font-family: "Menco";
+        src: url("https://artificialisle.github.io/font/Kvant%20-%20Menco-Medium%20(2).otf")
+          format("opentype");
+      }
+    </style>
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+        background-color: #000000;
+        font-family: "Fobble", Arial, sans-serif;
+
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+      }
+      #game-container {
+        position: relative;
+        aspect-ratio: 2 / 3;
+        max-width: 500px;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@0.2.1/dist/index.min.js"></script>
+  </head>
+  <body>
+    <div id="game-container"></div>
+
+    <script>
+      // Game data management using Farcade SDK
+      class GameData {
+        constructor() {
+          this.unlockedWeapons = ["pistol"];
+          this.currentWeapon = "pistol";
+          this.highestWave = 1;
+          this.totalScore = 0;
+          this.isMuted = false;
+          this.initialized = false;
+        }
+
+        async initialize(initialGameState) {
+          if (initialGameState) {
+            this.unlockedWeapons = initialGameState.unlockedWeapons || [
+              "pistol",
+            ];
+            this.currentWeapon = initialGameState.currentWeapon || "pistol";
+            this.highestWave =
+              initialGameState.highestWave ||
+              initialGameState.highestLevel ||
+              1;
+            this.totalScore = initialGameState.totalScore || 0;
+          }
+          this.initialized = true;
+        }
+
+        getGameState() {
+          return {
+            unlockedWeapons: this.unlockedWeapons,
+            currentWeapon: this.currentWeapon,
+            highestWave: this.highestWave,
+            totalScore: this.totalScore,
+            isMuted: this.isMuted,
+          };
+        }
+
+        setGameState(gameState) {
+          if (gameState) {
+            this.unlockedWeapons = gameState.unlockedWeapons || ["pistol"];
+            this.currentWeapon = gameState.currentWeapon || "pistol";
+            this.highestWave =
+              gameState.highestWave || gameState.highestLevel || 1;
+            this.totalScore = gameState.totalScore || 0;
+          }
+        }
+
+        saveCurrentWeapon(weapon) {
+          this.currentWeapon = weapon;
+          this.saveGameState();
+        }
+
+        saveHighestWave(wave) {
+          if (wave > this.highestWave) {
+            this.highestWave = wave;
+            this.saveGameState();
+          }
+        }
+
+        saveTotalScore(score) {
+          this.totalScore += score;
+          this.saveGameState();
+        }
+
+        resetTotalScore() {
+          this.totalScore = 0;
+          this.saveGameState();
+        }
+
+        unlockWeapon(weapon) {
+          if (!this.unlockedWeapons.includes(weapon)) {
+            this.unlockedWeapons.push(weapon);
+            this.saveGameState();
+          }
+        }
+
+        saveGameState() {
+          if (this.initialized && window.FarcadeSDK) {
+            window.FarcadeSDK.singlePlayer.actions.saveGameState({
+              gameState: this.getGameState(),
+            });
+          }
+        }
+
+        toggleMute() {
+          this.isMuted = !this.isMuted;
+          this.saveGameState();
+          return this.isMuted;
+        }
+      }
+
+      // Global game data instance
+      const gameData = new GameData();
+
+      // Helper function to play sounds with mute checking
+      function playSound(scene, soundKey, options = {}) {
+        if (!gameData.isMuted && scene && scene.sound) {
+          try {
+            scene.sound.play(soundKey, options);
+          } catch (error) {
+            console.warn(
+              `Sound ${soundKey} not found or failed to play:`,
+              error
+            );
+          }
+        }
+      }
+
+      class BootLoader extends Phaser.Scene {
+        constructor() {
+          super({ key: "BootLoader" });
+        }
+
+        preload() {
+          this.loadFontPromise = document.fonts.load('16px "Fobble"');
+          this.loadFontPromise = document.fonts.load('16px "Menco"');
+          // Create loading bar
+          this.createLoadingBar();
+
+          // Load all essential assets
+
+          this.load.image(
+            "hubbg1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/4-hzQK8kkSXehTGXGvcIv9Fu0xelxmDA.png?YjQn"
+          );
+
+          this.load.image(
+            "bg1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/1-XHrEguPCzVaJRYvVpKH8S9bkUfSdK4.png?Afkw"
+          );
+          this.load.image(
+            "bg2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/2-reEU2PRbxmrKelpuZ1Rde6m6Ybh9a4.png?F4Us"
+          );
+          this.load.image(
+            "bg3",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/3-45OHicU5JYKOk9oRdsZ9Zi2emHcSKC.png?XUAT"
+          );
+          this.load.image(
+            "parralax1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/11-bryHN2rvNHnuCurMNn0xn32Md6DRmJ.png?7REz"
+          );
+          this.load.image(
+            "parralax2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/12-Aft8gd80QO9S9cFsk7SyEDX9u9HVoJ.png?qAFs"
+          );
+          this.load.image(
+            "parralaxbottom1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/10-export-5Os2t4viDcvCkgGLgGnXSIPLzh476T.png?kI8J"
+          );
+          this.load.image(
+            "parralaxbottom2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/8-export-akOGtJLgtSCf503wZ3nqZkN5bzRoJz.png?bImS"
+          );
+
+          // Player spritesheets
+          this.load.spritesheet(
+            "playerIdle",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Idle_00-sheet-ivGxERrYJIvKDCAYpWyuzZpzRhZA0n.png?ppSl",
+            { frameWidth: 124, frameHeight: 189 }
+          );
+          this.load.spritesheet(
+            "playerWalk",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Walk_00-sheet-wCXqM2qWw2yQFf3tAa502hu3l2qF4w.png?PVMK",
+            { frameWidth: 124, frameHeight: 193 }
+          );
+
+          // Weapon images
+          this.load.image(
+            "gun1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Guns01_Handed-qB13aQTfsIGJkmDrsMKNUou9M9Tldx.png?Kn7n"
+          );
+          this.load.image(
+            "bullet1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/6-hLtS9xBgBJ8GRKlQLIpzBSEgEoemTX.png?ooFP"
+          );
+
+          this.load.image(
+            "icegun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Guns03_Handed-8rzSUKMjN6rkwXYVoqQRAB3fKd759x.png?6TBR"
+          );
+          this.load.image(
+            "icebullet",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/7-JtTM1rFtz1tWUPfaQD7XNkw3xw4fdx.png?kDlH"
+          );
+
+          this.load.image(
+            "lazergun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Guns04_Handed-5HVCMwmB3iPXfbzy4yfSVguvo4zZhi.png?Uz2H"
+          );
+          this.load.image(
+            "lazerbullet",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/skeleton-animation_0-export-RTBovMXS7j5PlwujmLe0HBvgrEqPsu.png?YRGG"
+          );
+
+          this.load.image(
+            "boxinggun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Guns05_Handed-Nwha02nVZtLfI6IgoyUdPC0NZmqHHJ.png?PVKh"
+          );
+          this.load.image(
+            "boxingbullet",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/skeleton-animation_0%20copy-CNEJSQYL1HX06Z2LHbqibVY5Kwpxq2.png?di82"
+          );
+
+          // Enemy spritesheets (Batton only)
+          this.load.spritesheet(
+            "enemyWalk",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Walk_00-sheet-XnDUSXdAaTabsCdRhxMbTFQlp7G79t.png?p4W8",
+            { frameWidth: 240, frameHeight: 240 }
+          );
+          this.load.spritesheet(
+            "enemyAttack",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Hit_00-sheet-miKApOqunyoEsstPrABlqIxDaHhCnh.png?m9WP",
+            { frameWidth: 352, frameHeight: 304 }
+          );
+          this.load.spritesheet(
+            "enemyDeath",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Death_00-sheet-5XcT84KK0AveeFwlnaSDAyBzJqwXBS.png?LOQh",
+            { frameWidth: 352, frameHeight: 320 }
+          );
+
+          // Enemy spritesheets (Batton & Shield)
+          this.load.spritesheet(
+            "enemy2Walk",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Walk_00-sheet-vf7ZIkHj90KxZqNKIypVXoViz8MCEw.png?Zey3",
+            { frameWidth: 190, frameHeight: 190 }
+          );
+          this.load.spritesheet(
+            "enemy2Attack",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Hit_00-sheet-WMyVg8k40XUtcFsvSyGxw0FqH0ylKX.png?ArXJ",
+            { frameWidth: 288, frameHeight: 256 }
+          );
+          this.load.spritesheet(
+            "enemy2Death",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Death_00-sheet-zK5SyiymCFT7LiFXHuj8iVUFVhtv2J.png?kDPI",
+            { frameWidth: 272, frameHeight: 256 }
+          );
+
+          // Enemy spritesheets (Flying robot with gun)
+          this.load.spritesheet(
+            "enemy3Walk",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Moving%20and%20Idle_0-sheet-mjuFivniFNMOYoRKrEs1dZmwtLR7aJ.png?6Tli",
+            { frameWidth: 115, frameHeight: 190 }
+          );
+
+          this.load.spritesheet(
+            "enemy3Death",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/Destroy_00-sheet-hsFiP0vgmhlQO2FHavRC5CKTHXellE.png?jJFO",
+            { frameWidth: 210, frameHeight: 240 }
+          );
+
+          // Winner animation sprite (from previous game)
+          this.load.spritesheet(
+            "winner",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/giphy%20%283%29-7NPgCuEduO6YXBe9UEkJIUxdYqx5ye.png?X9I0",
+            { frameWidth: 250, frameHeight: 250 }
+          );
+
+          this.load.spritesheet(
+            "explosion",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/skeleton-Fx3_0-sheet-slgGmml6kCBWB7EgWsvDbviykkyCOk.png?XRhO",
+            { frameWidth: 116, frameHeight: 102 }
+          );
+
+          this.load.audio(
+            "HudMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/cyberpunk-tohican-141620-RQtGzY8VwbEGGbOhumrsyCo6tIoSe9.mp3?XAWq"
+          );
+          this.load.audio(
+            "GameMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/rage-of-the-streets-207459-CCytQSX7JWa8aCiYXufOVSwZgO4Lne.mp3?xtq4"
+          );
+          this.load.audio(
+            "SuccessMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/cyberpunk-short-155290-F96YBlsgrR4AhOlKUYFco2tN1pedZ6.mp3?yq7D"
+          );
+
+          // SoundFx
+          this.load.audio(
+            "ClickFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/minimal-pop-click-ui-1-198301-UDXG34BcgCKKjEUHcx0hQqyHaSoUws.mp3?0BoM"
+          );
+          this.load.audio(
+            "StartGameFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/achievement-video-game-type-1-230515-xixzYJWOIlmiFt6pAcMcNsvMoqOEpr.mp3?S98r"
+          );
+          this.load.audio(
+            "HitFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/hit-zjSAbNHwMeQd6uSXHJMtVEKeBVONgX.mp3?0JMD"
+          );
+          this.load.audio(
+            "GunShotFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/sci-fi-weapon-shoot-firing-plasma-ku-02-233815-z0KXsBkgDRxTkYpSCjcKKJFe5zlmFP.mp3?nXgK"
+          );
+
+          this.load.audio(
+            "ExplosionFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/explosion-312361-9y5gppqdfbahrD1P9z7JTIcAE8Nx2B.mp3?8N5E"
+          );
+          this.load.audio(
+            "FreezeFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/iced-magic-4-378604-LwfcyFVcd5l7sgJttvI2b6WLP7fOtr.mp3?OIjL"
+          );
+          this.load.audio(
+            "LightningFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/electric-discharge-386160-AoMT1ZOellXn4nytTeLIpPV2vuFkt4.mp3?7Xsi"
+          );
+          this.load.audio(
+            "ComboFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c7d533fd-3fb1-4432-98dc-8d42fe102ae0/collect-points-190037-8MzjprIUq3e6c9znu5f7ex8FmrjfHB.mp3?HLn0"
+          );
+
+          // Load progress events
+          this.load.on("progress", this.updateLoadingBar, this);
+          this.load.on("complete", this.onLoadComplete, this);
+        }
+
+        createLoadingBar() {
+          this.cameras.main.fadeIn(500, 0, 0, 0);
+          this.cameras.main.setBackgroundColor(0x00142d);
+
+          // Loading text
+          this.loadingText = this.add
+            .text(200, 280, "Loading...", {
+              fontFamily: "Fobble",
+              fontSize: "48px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Graphics for background
+          this.loadingBarBg = this.add.graphics();
+          this.loadingBarBg.fillStyle(0x000000, 0.3);
+          this.loadingBarBg.fillRoundedRect(50, 310, 300, 20, 10);
+
+          // Graphics for fill
+          this.loadingBarFill = this.add.graphics();
+          this.loadingBarFill.fillStyle(0xa9ff99, 1);
+          this.loadingBarFill.fillRoundedRect(50, 310, 0, 20, 10);
+
+          this.loadingBarWidth = 300;
+        }
+
+        updateLoadingBar(progress) {
+          // Update loading bar
+          this.loadingBarFill.clear();
+          this.loadingBarFill.fillStyle(0xa9ff99, 1);
+          this.loadingBarFill.fillRoundedRect(
+            50,
+            310,
+            this.loadingBarWidth * progress,
+            20,
+            10
+          );
+          // Update loading text
+          const percentage = Math.round(progress * 100);
+          this.loadingText.setText(`Loading... ${percentage}%`);
+        }
+
+        onLoadComplete() {
+          // Create global animations that can be used across all scenes
+          const anims = this.anims;
+
+          // Create player animations
+          if (!anims.exists("playerIdle")) {
+            anims.create({
+              key: "playerIdle",
+              frames: anims.generateFrameNumbers("playerIdle", {
+                start: 0,
+                end: 13,
+              }),
+              frameRate: 10,
+              repeat: -1,
+            });
+          }
+
+          if (!anims.exists("playerWalk")) {
+            anims.create({
+              key: "playerWalk",
+              frames: anims.generateFrameNumbers("playerWalk", {
+                start: 0,
+                end: 11,
+              }),
+              frameRate: 24,
+              repeat: -1,
+            });
+          }
+
+          // Create enemy animations
+          if (!anims.exists("enemyWalk")) {
+            anims.create({
+              key: "enemyWalk",
+              frames: anims.generateFrameNumbers("enemyWalk", {
+                start: 0,
+                end: 13,
+              }),
+              frameRate: 12,
+              repeat: -1,
+            });
+          }
+
+          if (!anims.exists("enemyAttack")) {
+            anims.create({
+              key: "enemyAttack",
+              frames: anims.generateFrameNumbers("enemyAttack", {
+                start: 0,
+                end: 13,
+              }),
+              frameRate: 15,
+              repeat: 0,
+            });
+          }
+
+          // Create explosion animation
+          if (!anims.exists("explosion")) {
+            anims.create({
+              key: "explosion",
+              frames: anims.generateFrameNumbers("explosion", {
+                start: 0,
+                end: 17,
+              }),
+              frameRate: 20,
+              repeat: 0,
+            });
+          }
+
+          if (!anims.exists("enemyDeath")) {
+            anims.create({
+              key: "enemyDeath",
+              frames: anims.generateFrameNumbers("enemyDeath", {
+                start: 0,
+                end: 23,
+              }),
+              frameRate: 20,
+              repeat: 0,
+            });
+          }
+
+          // Create enemy2 (Heavy Guard) animations
+          if (!anims.exists("enemy2Walk")) {
+            anims.create({
+              key: "enemy2Walk",
+              frames: anims.generateFrameNumbers("enemy2Walk", {
+                start: 0,
+                end: 13,
+              }),
+              frameRate: 12,
+              repeat: -1,
+            });
+          }
+
+          if (!anims.exists("enemy2Attack")) {
+            anims.create({
+              key: "enemy2Attack",
+              frames: anims.generateFrameNumbers("enemy2Attack", {
+                start: 0,
+                end: 13,
+              }),
+              frameRate: 15,
+              repeat: 0,
+            });
+          }
+
+          if (!anims.exists("enemy2Death")) {
+            anims.create({
+              key: "enemy2Death",
+              frames: anims.generateFrameNumbers("enemy2Death", {
+                start: 0,
+                end: 23,
+              }),
+              frameRate: 20,
+              repeat: 0,
+            });
+          }
+
+          // Create flying robot animations
+          if (!anims.exists("enemy3Walk")) {
+            anims.create({
+              key: "enemy3Walk",
+              frames: anims.generateFrameNumbers("enemy3Walk", {
+                start: 0,
+                end: 6,
+              }),
+              frameRate: 8,
+              repeat: -1,
+            });
+          }
+
+          if (!anims.exists("enemy3Death")) {
+            anims.create({
+              key: "enemy3Death",
+              frames: anims.generateFrameNumbers("enemy3Death", {
+                start: 0,
+                end: 13,
+              }),
+              frameRate: 15,
+              repeat: 0,
+            });
+          }
+
+          // Winner animation (from previous game)
+          if (!anims.exists("win")) {
+            anims.create({
+              key: "win",
+              frames: anims.generateFrameNumbers("winner", {
+                start: 0,
+                end: 54,
+              }),
+              frameRate: 15,
+              repeat: 0,
+            });
+          }
+
+          // Small delay before transitioning
+          this.time.delayedCall(1000, () => {
+            this.cameras.main.fadeOut(500);
+            this.scene.start("HubScene");
+          });
+        }
+      }
+
+      class HubScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "HubScene" });
+          this.selectedWeapon = gameData.currentWeapon || "pistol";
+          this.weapons = [
+            { id: "pistol", name: "PISTOL", unlocked: true },
+            {
+              id: "icegun",
+              name: "ICE GUN",
+              unlocked: gameData.unlockedWeapons.includes("icegun"),
+            },
+            {
+              id: "lazergun",
+              name: "LASER GUN",
+              unlocked: gameData.unlockedWeapons.includes("lazergun"),
+            },
+            {
+              id: "boxinggun",
+              name: "BOXING GUN",
+              unlocked: gameData.unlockedWeapons.includes("boxinggun"),
+            },
+          ];
+        }
+
+        autoSelectBestOptions() {
+          // Auto-select latest unlocked weapon
+          this.selectedWeapon = this.getLatestUnlockedWeapon();
+          gameData.saveCurrentWeapon(this.selectedWeapon);
+        }
+
+        getLatestUnlockedWeapon() {
+          const unlockedWeapons = this.weapons.filter(
+            (weapon) => weapon.unlocked
+          );
+          if (unlockedWeapons.length > 0) {
+            return unlockedWeapons[unlockedWeapons.length - 1].id;
+          }
+          return "pistol";
+        }
+
+        preload() {}
+
+        getWeaponImageKey() {
+          const weapon = this.weapons.find((w) => w.id === this.selectedWeapon);
+          if (!weapon) return "gun1";
+
+          switch (weapon.id) {
+            case "icegun":
+              return "icegun";
+            case "lazergun":
+              return "lazergun";
+            case "boxinggun":
+              return "boxinggun";
+            default:
+              return "gun1"; // Default pistol
+          }
+        }
+
+        async create() {
+          // Ensure extra touch pointers are available on mobile
+          this.input.addPointer(2);
+          this.cameras.main.fadeIn(500);
+          // Initialize game data if not already done
+          if (!gameData.initialized) {
+            await gameData.initialize();
+          }
+
+          // Update weapons array with current unlocked state
+          this.weapons.forEach((weapon) => {
+            weapon.unlocked = gameData.unlockedWeapons.includes(weapon.id);
+          });
+
+          // Auto-select latest unlocked weapon and highest level
+          this.autoSelectBestOptions();
+
+          // Create background
+          this.createBackground();
+
+          // Create flickering lab lighting overlay
+          this.createLabLighting();
+
+          // Title
+          this.add
+            .text(200, 75, "Lab Escape", {
+              fontFamily: "Fobble",
+              fontSize: "80px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 10,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Sub Title
+          this.add
+            .text(
+              200,
+              this.sys.game.config.height - 50,
+              "HELP PUDGY ESCAPE THE LAB!",
+              {
+                fontFamily: "Fobble",
+                fontSize: "32px",
+                fill: "#ffffff",
+                stroke: "#000000",
+                strokeThickness: 4,
+                align: "center",
+              }
+            )
+            .setOrigin(0.5);
+
+          // Player display
+          this.playerDisplay = this.add.sprite(200, 365, "playerIdle");
+          this.playerDisplay.setScale(0.8);
+
+          // Weapon display over player
+          this.weaponDisplay = this.add.sprite(
+            225,
+            400,
+            this.getWeaponImageKey()
+          );
+          this.weaponDisplay.setScale(0.6);
+          this.weaponDisplay.setDepth(10);
+
+          // Safety check for animation existence
+          if (this.anims.exists("playerIdle")) {
+            this.playerDisplay.play("playerIdle");
+          } else {
+            console.warn("playerIdle animation not found, creating fallback");
+            // Create the animation if it doesn't exist
+            this.anims.create({
+              key: "playerIdle",
+              frames: this.anims.generateFrameNumbers("playerIdle", {
+                start: 0,
+                end: 13,
+              }),
+              frameRate: 10,
+              repeat: -1,
+            });
+            this.playerDisplay.play("playerIdle");
+          }
+
+          // Weapon selection
+          this.createWeaponSelection();
+
+          // Stats display
+          this.createStatsDisplay();
+
+          // Play button
+          this.createPlayButton();
+
+          // Controls
+          this.setupHubControls();
+
+          // Update weapon navigation to reflect current unlock state
+          if (this.updateWeaponNavigation) {
+            this.updateWeaponNavigation();
+          }
+
+          // Start hub music
+          this.startHubMusic();
+        }
+
+        startHubMusic() {
+          // Stop any existing music
+          if (this.hubMusic) {
+            this.hubMusic.stop();
+          }
+
+          // Start hub music if not muted
+          if (!gameData.isMuted) {
+            this.hubMusic = this.sound.add("HudMusic", {
+              loop: true,
+              volume: 0.3,
+            });
+            this.hubMusic.play();
+          }
+        }
+
+        stopHubMusic() {
+          if (this.hubMusic) {
+            this.hubMusic.stop();
+            this.hubMusic = null;
+          }
+        }
+
+        playClickSound() {
+          if (!gameData.isMuted) {
+            this.sound.play("ClickFx", { volume: 0.3 });
+          }
+        }
+
+        createBackground() {
+          const bg = this.add.image(
+            this.sys.game.config.width / 2,
+            this.sys.game.config.height / 2,
+            "hubbg1"
+          );
+        }
+
+        createLabLighting() {
+          // Create flickering light overlay
+          this.labLighting = this.add.graphics();
+          this.labLighting.setDepth(0); // Same depth as background
+          this.labLighting.setScrollFactor(0);
+
+          // Lighting properties
+          this.lightingIntensity = 0.05; // Very subtle
+          this.lightingColor = 0xffffff; // White light
+          this.flickerTimer = 0;
+          this.flickerInterval = 50; // Update every 50ms for smooth flickering
+
+          // Start flickering animation
+          this.startLabFlickering();
+        }
+
+        startLabFlickering() {
+          this.labFlickerTimer = this.time.addEvent({
+            delay: this.flickerInterval,
+            callback: this.updateLabFlickering,
+            callbackScope: this,
+            loop: true,
+          });
+        }
+
+        updateLabFlickering() {
+          this.flickerTimer += this.flickerInterval;
+
+          // Random flicker events
+          if (Math.random() < 0.1) {
+            // 10% chance of flicker
+            const flickerType = Math.random();
+
+            if (flickerType < 0.3) {
+              // Dim flicker (30% of flickers)
+              this.lightingIntensity = 0.02 + Math.random() * 0.02;
+              this.lightingColor = 0xffffff;
+            } else if (flickerType < 0.6) {
+              // Bright flicker (30% of flickers)
+              this.lightingIntensity = 0.08 + Math.random() * 0.04;
+              this.lightingColor = 0xffffff;
+            } else if (flickerType < 0.8) {
+              // Blue tint flicker (20% of flickers)
+              this.lightingIntensity = 0.04 + Math.random() * 0.03;
+              this.lightingColor = 0xccccff;
+            } else {
+              // Yellow tint flicker (20% of flickers)
+              this.lightingIntensity = 0.03 + Math.random() * 0.03;
+              this.lightingColor = 0xffffcc;
+            }
+          } else {
+            // Normal operation - subtle variation
+            this.lightingIntensity = 0.04 + Math.random() * 0.02;
+            this.lightingColor = 0xffffff;
+          }
+
+          // Draw the lighting overlay
+          this.labLighting.clear();
+          this.labLighting.fillStyle(
+            this.lightingColor,
+            this.lightingIntensity
+          );
+          this.labLighting.fillRect(
+            0,
+            0,
+            this.sys.game.config.width,
+            this.sys.game.config.height
+          );
+        }
+
+        destroy() {
+          // Stop hub music
+          this.stopHubMusic();
+
+          // Clean up lab lighting timer
+          if (this.labFlickerTimer) {
+            this.labFlickerTimer.destroy();
+          }
+
+          // Clean up lighting graphics
+          if (this.labLighting) {
+            this.labLighting.destroy();
+          }
+
+          // Call parent destroy method
+          super.destroy();
+        }
+
+        createWeaponSelection() {
+          // Create weapon navigation arrows
+          this.createWeaponNavigation();
+        }
+
+        createWeaponNavigation() {
+          // Left arrow
+          this.leftArrow = this.add
+            .text(110, 390, "◄", {
+              fontSize: "32px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setInteractive()
+            .on("pointerdown", () => {
+              console.log("Previous weapon button clicked");
+              // playSound(this, "ClickFx", { volume: 0.5 }); // Temporarily disabled until sounds are loaded
+              this.previousWeapon();
+            });
+
+          // Right arrow
+          this.rightArrow = this.add
+            .text(290, 390, "►", {
+              fontSize: "32px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setInteractive()
+            .on("pointerdown", () => {
+              console.log("Next weapon button clicked");
+              // playSound(this, "ClickFx", { volume: 0.5 }); // Temporarily disabled until sounds are loaded
+              this.nextWeapon();
+            });
+
+          // Weapon name display
+          this.weaponNameText = this.add
+            .text(200, 270, this.getCurrentWeaponName(), {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#ffffff",
+              stroke: "#ffffff",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Weapon counter display
+          this.weaponCounterText = this.add
+            .text(200, 410, "", {
+              fontFamily: "Menco",
+              fontSize: "32px",
+              fill: "#ffff00",
+              stroke: "#000000",
+              strokeThickness: 1,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setVisible(false);
+
+          // Unlock progress display
+          this.unlockProgressText = this.add
+            .text(200, 155, "", {
+              fontFamily: "Menco",
+              fontSize: "14px",
+              fill: "#ffffff",
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Initialize with current weapon
+          this.currentWeaponIndex = this.getCurrentWeaponIndex();
+          this.updateWeaponNavigation();
+        }
+
+        getCurrentWeaponIndex() {
+          return this.weapons.findIndex(
+            (weapon) => weapon.id === this.selectedWeapon
+          );
+        }
+
+        getCurrentWeaponName() {
+          const currentWeapon = this.weapons.find(
+            (weapon) => weapon.id === this.selectedWeapon
+          );
+          return currentWeapon ? currentWeapon.name : "Pistol";
+        }
+
+        getUnlockedWeapons() {
+          return this.weapons.filter((weapon) => weapon.unlocked);
+        }
+
+        nextWeapon() {
+          console.log("nextWeapon called");
+          const unlockedWeapons = this.getUnlockedWeapons();
+          console.log("unlockedWeapons:", unlockedWeapons);
+          const currentIndex = unlockedWeapons.findIndex(
+            (weapon) => weapon.id === this.selectedWeapon
+          );
+          const nextIndex = (currentIndex + 1) % unlockedWeapons.length;
+          console.log("selecting weapon:", unlockedWeapons[nextIndex].id);
+          this.selectWeapon(unlockedWeapons[nextIndex].id);
+
+          // Play click sound
+          this.playClickSound();
+        }
+
+        previousWeapon() {
+          const unlockedWeapons = this.getUnlockedWeapons();
+          const currentIndex = unlockedWeapons.findIndex(
+            (weapon) => weapon.id === this.selectedWeapon
+          );
+          const prevIndex =
+            currentIndex === 0 ? unlockedWeapons.length - 1 : currentIndex - 1;
+          this.selectWeapon(unlockedWeapons[prevIndex].id);
+
+          // Play click sound
+          this.playClickSound();
+        }
+
+        updateWeaponNavigation() {
+          // Update weapon name display
+          if (this.weaponNameText) {
+            this.weaponNameText.setText(this.getCurrentWeaponName());
+          }
+
+          // Update player weapon display
+          this.updatePlayerWeapon();
+
+          // Update weapon counter and progress
+          const unlockedWeapons = this.getUnlockedWeapons();
+          const totalWeapons = this.weapons.length;
+
+          if (this.weaponCounterText) {
+            this.weaponCounterText.setText(
+              `${unlockedWeapons.length}/${totalWeapons} WEAPONS UNLOCKED`
+            );
+          }
+
+          // Update unlock progress message
+          if (this.unlockProgressText) {
+            if (unlockedWeapons.length === totalWeapons) {
+              this.unlockProgressText.setText("🎉 ALL WEAPONS UNLOCKED!");
+            } else if (unlockedWeapons.length === 1) {
+              this.unlockProgressText.setText(
+                "COMPLETE WAVES TO UNLOCK WEAPONS!"
+              );
+            } else {
+              this.unlockProgressText.setText(
+                "USE ARROWS TO BROWSE UNLOCKED WEAPONS"
+              );
+            }
+          }
+
+          // Update arrow visibility and behavior
+          if (unlockedWeapons.length <= 1) {
+            this.leftArrow.setAlpha(0.3);
+            this.rightArrow.setAlpha(0.3);
+            this.leftArrow.setTint(0x666666);
+            this.rightArrow.setTint(0x666666);
+            this.leftArrow.removeInteractive();
+            this.rightArrow.removeInteractive();
+          } else {
+            this.leftArrow.setAlpha(1);
+            this.rightArrow.setAlpha(1);
+            this.leftArrow.clearTint();
+            this.rightArrow.clearTint();
+            this.leftArrow.setInteractive();
+            this.rightArrow.setInteractive();
+          }
+        }
+
+        createStatsDisplay() {
+          this.add
+            .text(130, 125, `WAVE: ${gameData.highestWave}`, {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#ffffff",
+              stroke: "#ffffff",
+              strokeThickness: 0,
+              align: "center",
+              fontWeight: "bold",
+            })
+            .setOrigin(0.5);
+
+          this.add
+            .text(270, 125, `SCORE: ${gameData.totalScore}`, {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#ffffff",
+              stroke: "#ffffff",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+        }
+
+        createPlayButton() {
+          this.playButton = this.add
+            .text(200, 480, "START WAVES", {
+              fontFamily: "Fobble",
+              fontSize: "52px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 5,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Add bobbing animation to catch attention
+          this.tweens.add({
+            targets: this.playButton,
+            y: 495,
+            duration: 1000,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+          });
+
+          this.playButton.setInteractive();
+
+          this.playButton.on("pointerdown", () => {
+            // Play start game sound
+            if (!gameData.isMuted) {
+              this.sound.play("StartGameFx", { volume: 0.6 });
+            }
+            this.startGame();
+          });
+        }
+
+        setupHubControls() {
+          this.cursors = this.input.keyboard.createCursorKeys();
+          this.spaceKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+          );
+          this.leftKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.A
+          );
+          this.rightKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.D
+          );
+        }
+
+        selectWeapon(weaponId) {
+          const weapon = this.weapons.find((w) => w.id === weaponId);
+          if (!weapon || !weapon.unlocked) return;
+
+          this.selectedWeapon = weaponId;
+          gameData.saveCurrentWeapon(weaponId);
+          this.updateWeaponNavigation();
+        }
+
+        updatePlayerWeapon() {
+          // Update player display sprite and animation
+          this.playerDisplay.setTexture("playerIdle");
+
+          // Update weapon display
+          if (this.weaponDisplay) {
+            this.weaponDisplay.setTexture(this.getWeaponImageKey());
+          }
+
+          // Safety check for animation existence
+          if (this.anims.exists("playerIdle")) {
+            this.playerDisplay.play("playerIdle");
+          }
+        }
+
+        startGame() {
+          // Re-enable play button for new game
+          if (this.playButton) {
+            this.playButton.setInteractive(true);
+            this.playButton.setAlpha(1.0); // Full opacity
+          }
+
+          // Stop hub music before starting game
+          this.stopHubMusic();
+
+          // Fade out all UI elements first
+          this.fadeOutUIElements();
+          this.cameras.main.fadeOut(500);
+          // Start GameScene always on wave 1
+          this.time.delayedCall(500, () => {
+            this.scene.start("GameScene", {
+              selectedWeapon: this.selectedWeapon,
+              selectedWave: 1,
+              isNewGame: true,
+            });
+          });
+        }
+
+        fadeOutUIElements() {
+          // Get all UI elements (text, sprites, buttons) that are not background
+          const uiElements = this.children.list.filter(
+            (child) =>
+              child.depth >= 0 && // Not background elements
+              (child.type === "Text" ||
+                child.type === "Sprite" ||
+                child.type === "Container")
+          );
+
+          // Fade out all UI elements
+          uiElements.forEach((element) => {
+            this.tweens.add({
+              targets: element,
+              alpha: 0,
+              duration: 400,
+              ease: "Power2.easeOut",
+            });
+          });
+        }
+
+        update() {
+          // Safety check - ensure input system is ready
+          if (!this.input || !this.input.keyboard) return;
+
+          // Handle keyboard navigation
+          if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            this.startGame();
+          }
+
+          // Handle weapon navigation
+          if (
+            (this.leftKey && Phaser.Input.Keyboard.JustDown(this.leftKey)) ||
+            (this.cursors &&
+              this.cursors.left &&
+              Phaser.Input.Keyboard.JustDown(this.cursors.left))
+          ) {
+            this.previousWeapon();
+          }
+          if (
+            (this.rightKey && Phaser.Input.Keyboard.JustDown(this.rightKey)) ||
+            (this.cursors &&
+              this.cursors.right &&
+              Phaser.Input.Keyboard.JustDown(this.cursors.right))
+          ) {
+            this.nextWeapon();
+          }
+        }
+      }
+
+      class GameScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "GameScene" });
+          this.player = null;
+          this.playerGun = null;
+          this.enemies = null;
+          this.bullets = null;
+          this.score = 0;
+          this.health = 5;
+          this.gameRunning = true;
+          this.selectedWeapon = "pistol";
+          this.selectedWave = 1;
+          this.currentWave = 1;
+          this.bgWidth = 2446;
+          this.bgHeight = 600;
+          this.worldWidth = this.bgWidth;
+          this.enemiesSpawned = 0;
+          this.maxEnemies = 10;
+          this.enemiesKilled = 0;
+          this.laneTop = 260;
+          this.laneBottom = 470;
+          this.waveTransitioning = false;
+
+          // Difficulty scaling system
+          this.difficultyLevel = 2.0; // Base difficulty multiplier
+          this.performanceScore = 0; // Player performance rating
+          this.levelStartTime = 0; // Track level duration
+          this.damageTaken = 0; // Track total damage taken
+          this.shotsFired = 0; // Track shots fired
+          this.shotsHit = 0; // Track successful hits
+          this.maxCombo = 0; // Track best combo achieved
+          this.currentCombo = 0; // Current combo count
+          this.lastKillTime = 0; // Time of last enemy kill
+          this.comboWindow = 2000; // Combo window in ms
+          this.difficultyAdjustmentTimer = 0; // Timer for difficulty adjustments
+          this.difficultyAdjustmentInterval = 5000; // Adjust difficulty every 5 seconds
+
+          // Upgrade system
+          this.activeUpgrades = {
+            multishot: 0,
+            piercing: false,
+            explosive: false,
+            bulletSpeed: 0,
+            criticalShots: false,
+            comboMaster: false,
+            scoreMultiplier: 0,
+            freezeBlast: false,
+            executioner: false,
+            bloodRage: 0,
+            heal: false,
+          };
+        }
+
+        init(data) {
+          if (data) {
+            this.selectedWeapon = data.selectedWeapon || "pistol";
+            this.selectedWave = data.selectedWave || 1;
+            this.currentWave = this.selectedWave;
+            this.isNewGame = data.isNewGame !== false;
+
+            // Preserve upgrades across waves in the same run
+            if (data.activeUpgrades && !this.isNewGame) {
+              this.activeUpgrades = { ...data.activeUpgrades };
+            }
+          } else {
+            this.isNewGame = true;
+            this.currentWave = 1;
+          }
+
+          // Set wave-specific properties
+          this.setupWaveProperties();
+        }
+
+        setupWaveProperties() {
+          // Set wave-specific properties
+          if (this.currentWave === 1) {
+            this.worldWidth = this.bgWidth; // bg1 length
+            this.maxEnemies = 15;
+
+            // Show instruction text for first wave
+            this.showFirstWaveInstructions();
+          } else if (this.currentWave === 2) {
+            this.worldWidth = this.bgWidth; // bg2 length
+            this.maxEnemies = 20;
+          } else if (this.currentWave === 3) {
+            this.worldWidth = this.bgWidth; // bg3 length
+            this.maxEnemies = 25;
+          } else {
+            // Default for higher waves
+            this.worldWidth = this.bgWidth;
+            this.maxEnemies = 20 + (this.currentWave - 1) * 2;
+          }
+
+          // Reset enemy counters and difficulty
+          this.enemiesSpawned = 0;
+          this.enemiesKilled = 0;
+          this.difficultyLevel = 1.0 + (this.currentWave - 1) * 0.2; // Base difficulty increases with wave
+          this.performanceScore = 0;
+          this.damageTaken = 0;
+          this.shotsFired = 0;
+          this.shotsHit = 0;
+          this.maxCombo = 0;
+          this.currentCombo = 0;
+          this.levelStartTime = 0;
+
+          // Initialize upgrade-specific counters
+          this.bloodRageStacks = 0;
+          this.killCount = 0;
+
+          // Auto-shooting system
+          this.lastShotTime = 0;
+          this.autoShooting = true;
+
+          // Player freeze system
+          this.isFrozen = false;
+          this.freezeTimer = 0;
+        }
+
+        showFirstWaveInstructions() {
+          // Create floating instruction text
+          const instructionText = this.add.text(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY - 150,
+            "Clear area to\ncomplete each wave",
+            {
+              fontFamily: "Fobble",
+              fontSize: "24px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 4,
+              align: "center",
+              wordWrap: { width: 300, useAdvancedWrap: true },
+            }
+          );
+
+          instructionText.setOrigin(0.5);
+          instructionText.setDepth(100000); // Above everything else
+          instructionText.setScrollFactor(0); // Don't scroll with camera
+
+          // Add subtle floating animation
+          this.tweens.add({
+            targets: instructionText,
+            y: instructionText.y - 10,
+            duration: 2000,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut",
+          });
+
+          // Fade out after 3 seconds
+          this.time.delayedCall(3000, () => {
+            this.tweens.add({
+              targets: instructionText,
+              alpha: 0,
+              duration: 1000,
+              ease: "Power2.easeOut",
+              onComplete: () => {
+                instructionText.destroy();
+              },
+            });
+          });
+        }
+
+        startGameplayMusic() {
+          // Stop any existing music
+          if (this.gameplayMusic) {
+            this.gameplayMusic.stop();
+          }
+
+          // Start gameplay music if not muted
+          if (!gameData.isMuted) {
+            this.gameplayMusic = this.sound.add("GameMusic", {
+              loop: true,
+              volume: 0.2,
+            });
+            this.gameplayMusic.play();
+          }
+        }
+
+        stopGameplayMusic() {
+          if (this.gameplayMusic) {
+            this.gameplayMusic.stop();
+            this.gameplayMusic = null;
+          }
+        }
+
+        playSuccessMusic() {
+          // Stop gameplay music temporarily
+          if (this.gameplayMusic) {
+            this.gameplayMusic.pause();
+          }
+
+          // Play success music if not muted
+          if (!gameData.isMuted) {
+            this.successMusic = this.sound.add("SuccessMusic", {
+              loop: false,
+              volume: 0.4,
+            });
+            this.successMusic.play();
+
+            // Resume gameplay music after success music ends
+            this.successMusic.on("complete", () => {
+              if (this.gameplayMusic) {
+                this.gameplayMusic.resume();
+              }
+            });
+          } else if (this.gameplayMusic) {
+            // If muted, just resume gameplay music
+            this.gameplayMusic.resume();
+          }
+        }
+
+        preload() {
+          // Assets already loaded in BootLoader
+        }
+
+        getWeaponImageKey() {
+          switch (this.selectedWeapon) {
+            case "icegun":
+              return "icegun";
+            case "lazergun":
+              return "lazergun";
+            case "boxinggun":
+              return "boxinggun";
+            default:
+              return "gun1"; // Default pistol
+          }
+        }
+
+        getBulletImageKey() {
+          switch (this.selectedWeapon) {
+            case "icegun":
+              return "icebullet";
+            case "lazergun":
+              return "lazerbullet";
+            case "boxinggun":
+              return "boxingbullet";
+            default:
+              return "bullet1"; // Default bullet
+          }
+        }
+
+        create() {
+          // Capture space to prevent browser defaults and reduce accidental repeats
+          this.input.keyboard.addCapture([
+            Phaser.Input.Keyboard.KeyCodes.SPACE,
+          ]);
+          this.weaponSwitchCooldown = 0; // ms cooldown for space weapon switch
+          this.cameras.main.fadeIn(500, 0, 0, 0);
+
+          // Create Phaser UI elements
+          this.createGameUI();
+
+          // Reset game state
+          this.gameRunning = true;
+          // Start each game session with score = 0, will add to totalScore when game ends
+          this.score = 0;
+
+          // Only reset health on new games, preserve between waves
+          if (this.isNewGame) {
+            this.health = 10;
+          }
+          this.levelStartTime = this.time.now; // Initialize level start time for difficulty tracking
+
+          // Update UI with initial values
+          this.updateUI();
+
+          // Create scrolling background layers
+          this.createScrollingBackground();
+
+          // Create physics world
+          this.physics.world.setBounds(0, 0, this.worldWidth, this.bgHeight);
+
+          // Create player sprite first (will be added to container)
+          this.playerSprite = this.add.sprite(0, 0, "playerIdle");
+          this.playerSprite.setDisplaySize(62, 95);
+
+          // Start with idle animation if it exists
+          if (this.anims.exists("playerIdle")) {
+            this.playerSprite.play("playerIdle");
+          }
+
+          // Create gun sprite (positioned relative to player)
+          this.playerGun = this.add.image(25, 23, this.getWeaponImageKey());
+          this.playerGun.setDisplaySize(60, 30);
+          this.playerGun.setDepth(1); // Relative depth within container
+
+          // Create health bar graphics first
+          this.playerHealthBarBg = this.add.graphics();
+          this.playerHealthBarFill = this.add.graphics();
+          this.playerHealthBarBg.setDepth(70000);
+          this.playerHealthBarFill.setDepth(70001);
+
+          // Create container with player, gun, and health bar
+          this.playerContainer = this.add.container(200, 400, [
+            this.playerSprite,
+            this.playerGun,
+            this.playerHealthBarBg,
+            this.playerHealthBarFill,
+          ]);
+
+          // Enable physics on the container
+          this.physics.world.enable(this.playerContainer);
+          this.playerContainer.body.setCollideWorldBounds(true);
+          this.playerContainer.body.setAllowGravity(false);
+          this.playerContainer.body.setMaxVelocity(200);
+          this.playerContainer.body.setSize(40, 60); // Collision body size for player
+          this.playerContainer.body.setOffset(-18, -20); // Offset collision body to bottom of sprite
+
+          // Add custom properties for knockback
+          this.playerContainer.isKnockbacked = false;
+          this.playerContainer.knockbackFriction = 0.85;
+
+          // Reference the container as 'player' for compatibility with existing code
+          this.player = this.playerContainer;
+
+          // Initialize player health bar
+          this.updatePlayerHealthBar();
+
+          // Create mobile joystick
+          this.createMobileJoystick();
+
+          // Create weapon switching button
+          this.createWeaponSwitchButton();
+
+          // Create bullet texture
+          this.createBulletTexture();
+
+          // Create particle systems
+          this.createParticleSystems();
+
+          // Enemy group
+          this.enemies = this.physics.add.group();
+
+          // Bullets group
+          this.bullets = this.physics.add.group({
+            classType: Phaser.Physics.Arcade.Image,
+            runChildUpdate: true,
+          });
+
+          // Enemy bullets group
+          this.enemyBullets = this.physics.add.group({
+            classType: Phaser.Physics.Arcade.Image,
+            runChildUpdate: true,
+          });
+
+          // Camera follows player
+          this.cameras.main.startFollow(this.player);
+          this.cameras.main.setBounds(0, 0, this.worldWidth, this.bgHeight);
+
+          // Controls
+          this.cursors = this.input.keyboard.createCursorKeys();
+          this.wasd = this.input.keyboard.addKeys("W,S,A,D");
+          this.spaceKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+          );
+
+          // Dynamic enemy spawning based on difficulty
+          this.setupDynamicSpawning();
+
+          // Start gameplay music
+          this.startGameplayMusic();
+
+          // Score only increases when killing enemies with bullets
+
+          // Bullet collision
+          this.physics.add.overlap(
+            this.bullets,
+            this.enemies,
+            (bullet, enemy) => {
+              if (!enemy.isDying) {
+                // Check if this bullet has already hit this enemy
+                if (bullet.hitEnemies && bullet.hitEnemies.has(enemy)) {
+                  return; // Skip damage if already hit this enemy
+                }
+
+                // Mark this enemy as hit by this bullet
+                if (bullet.hitEnemies) {
+                  bullet.hitEnemies.add(enemy);
+                }
+
+                this.createBulletHitEffect(bullet.x, bullet.y);
+
+                // Add particle effect based on weapon type
+                let particleColor = 0xffff00; // Default yellow
+                if (bullet.isIceGun) particleColor = 0xccccff; // Cyan for ice
+                if (bullet.isLaserGun) particleColor = 0xff0000; // Red for laser
+                if (bullet.isCritical) particleColor = 0xffaa00; // Orange for critical
+
+                this.createParticleEffect(
+                  bullet.x,
+                  bullet.y,
+                  "hit",
+                  particleColor,
+                  6
+                );
+
+                // Don't destroy piercing bullets
+                if (!bullet.isPiercing) {
+                  bullet.destroy();
+                }
+
+                // Calculate damage (critical shots deal double damage)
+                const damage = bullet.isCritical ? 2 : 1;
+
+                // Apply executioner bonus (3x damage to enemies below 20% health)
+                let finalDamage = damage;
+                if (
+                  this.activeUpgrades.executioner &&
+                  enemy.health <= enemy.maxHealth * 0.2
+                ) {
+                  finalDamage = damage * 3;
+                  console.log("Executioner bonus applied!");
+                }
+
+                // Apply blood rage bonus
+                if (this.activeUpgrades.bloodRage > 0) {
+                  finalDamage = Math.floor(
+                    finalDamage * (1 + this.bloodRageStacks * 0.02)
+                  );
+                }
+
+                // Show critical hit effect
+                if (bullet.isCritical) {
+                  this.createCriticalHitEffect(enemy.x, enemy.y);
+                }
+
+                // Ice gun slows enemies
+                if (bullet.isIceGun) {
+                  this.applySlowEffect(enemy);
+                }
+
+                // Laser gun chains to nearby enemy
+                if (bullet.isLaserGun) {
+                  console.log("Laser gun hit! Attempting chain lightning...");
+                  this.chainLightning(bullet.x, bullet.y, enemy, damage);
+                }
+
+                // Reduce enemy health
+                enemy.health -= finalDamage;
+                this.updateEnemyHealthBar(enemy);
+
+                // Play hit sound with random pitch variation
+                if (!gameData.isMuted) {
+                  const pitch = 0.8 + Math.random() * 0.4; // Random pitch between 0.8 and 1.2
+                  this.sound.play("HitFx", {
+                    volume: 0.8,
+                    detune: (pitch - 1) * 1200,
+                  });
+                }
+
+                // Explosive rounds deal AOE damage
+                if (bullet.isExplosive) {
+                  this.createExplosion(
+                    bullet.x,
+                    bullet.y,
+                    damage,
+                    bullet.hitEnemies
+                  );
+                  if (!bullet.isPiercing) {
+                    bullet.destroy(); // Make sure explosive non-piercing bullets destroy
+                  }
+                }
+
+                if (enemy.health <= 0) {
+                  // Enemy dies
+                  this.createBloodSplashEffect(enemy.x, enemy.y);
+                  this.handleEnemyDeath(enemy);
+
+                  // Track successful hit
+                  this.shotsHit++;
+
+                  // Combo system
+                  const currentTime = this.time.now;
+                  const comboWindow = this.activeUpgrades.comboMaster
+                    ? 4000
+                    : 2000;
+                  if (currentTime - this.lastKillTime < comboWindow) {
+                    this.currentCombo++;
+
+                    // Play combo sound for combos 2 and above
+                    if (this.currentCombo >= 2 && !gameData.isMuted) {
+                      this.sound.play("ComboFx", { volume: 0.4 });
+                    }
+                  } else {
+                    this.currentCombo = 1;
+                  }
+                  this.lastKillTime = currentTime;
+                  this.maxCombo = Math.max(this.maxCombo, this.currentCombo);
+
+                  // Calculate points with combo multiplier
+                  const basePoints = enemy.enemyType === "heavy" ? 100 : 50;
+                  const comboMultiplier = Math.min(
+                    1 + (this.currentCombo - 1) * 0.2,
+                    3.0
+                  ); // Max 3x multiplier
+                  let pointsToAdd = Math.floor(basePoints * comboMultiplier);
+
+                  // Apply score multiplier upgrade
+                  if (this.activeUpgrades.scoreMultiplier > 0) {
+                    pointsToAdd = Math.floor(
+                      pointsToAdd *
+                        (1 + this.activeUpgrades.scoreMultiplier * 0.5)
+                    );
+                  }
+
+                  this.score += pointsToAdd;
+                  this.enemiesKilled++;
+
+                  // Blood rage stacks
+                  if (this.activeUpgrades.bloodRage > 0) {
+                    this.bloodRageStacks++;
+                  }
+
+                  // Freeze blast check
+                  this.killCount++;
+                  if (
+                    this.activeUpgrades.freezeBlast &&
+                    this.killCount % 5 === 0
+                  ) {
+                    this.freezeAllEnemies();
+                  }
+
+                  // Create floating score animation with combo info
+                  const comboText =
+                    this.currentCombo > 1 ? ` x${this.currentCombo}` : "";
+                  this.createFloatingScore(
+                    enemy.x,
+                    enemy.y - 30,
+                    pointsToAdd,
+                    comboText
+                  );
+
+                  console.log(
+                    `Enemy killed! Added ${pointsToAdd} points (Combo: ${this.currentCombo}). Total score: ${this.score}`
+                  );
+                  this.updateUI();
+
+                  // Check for wave completion
+                  if (this.enemiesKilled >= this.maxEnemies) {
+                    this.completeWave();
+                  }
+                } else {
+                  // Enemy takes damage but doesn't die
+                  // Flash red to show damage (unless slowed by ice)
+                  if (!enemy.isSlowed) {
+                    enemy.setTint(0xff0000);
+                    this.time.delayedCall(200, () => {
+                      if (enemy.active) enemy.clearTint();
+                    });
+                  } else {
+                    // Brief white flash for slowed enemies
+                    const originalTint = enemy.tintTopLeft;
+                    enemy.setTint(0xffffff);
+                    this.time.delayedCall(100, () => {
+                      if (enemy.active) enemy.setTint(0xccccff); // Back to ice blue
+                    });
+                  }
+                }
+              }
+            }
+          );
+
+          // Enemy bullets hitting player
+          this.physics.add.overlap(
+            this.enemyBullets,
+            this.player,
+            (player, bullet) => {
+              bullet.destroy();
+
+              if (bullet.isFreezeBullet) {
+                // Freeze player for 0.5 seconds
+                this.freezePlayer(500);
+                this.takeDamage(0, bullet.x, bullet.y);
+              } else {
+                // Regular damage
+                this.takeDamage(1, bullet.x, bullet.y);
+              }
+            }
+          );
+
+          // Use Phaser's built-in collider system for simple collision
+          this.physics.add.collider(
+            this.player,
+            this.enemies,
+            (player, enemy) => {
+              // Calculate bounce direction away from enemy
+              const dx = player.x - enemy.x;
+              const dy = player.y - enemy.y;
+              const distance = Math.sqrt(dx * dx + dy * dy);
+
+              if (distance > 0) {
+                // Normalize direction and apply bounce force
+                const bounceForce = 100; // Adjust this value for stronger/weaker bounce
+                const bounceX = (dx / distance) * bounceForce;
+                const bounceY = (dy / distance) * bounceForce;
+
+                // Apply bounce to player
+                player.body.setVelocity(bounceX, bounceY);
+              }
+            }
+          );
+        }
+
+        createScrollingBackground() {
+          // Use different background based on current wave
+          let bgKey = "bg1"; // Default
+          if (this.currentWave === 1) {
+            bgKey = "bg1";
+          } else if (this.currentWave === 2) {
+            bgKey = "bg2";
+          } else if (this.currentWave === 3) {
+            bgKey = "bg3";
+          }
+
+          // Add the main background
+          this.mainBg = this.add
+            .image(0, -100, bgKey)
+            .setOrigin(0, 0)
+            .setDepth(-10);
+
+          // Add parallax layers that span the entire world width
+          this.parallax1 = this.add
+            .tileSprite(0, 0, this.worldWidth, 161, "parralax1")
+            .setOrigin(0, 0)
+            .setDepth(50000);
+          this.parallax2 = this.add
+            .tileSprite(0, 0, this.worldWidth, 153, "parralax2")
+            .setOrigin(0, 0)
+            .setDepth(30000);
+          this.parallaxBottom1 = this.add
+            .tileSprite(
+              0,
+              this.bgHeight - 591 - 100,
+              this.worldWidth,
+              691,
+              "parralaxbottom1"
+            )
+            .setOrigin(0, 0)
+            .setDepth(40000);
+          this.parallaxBottom2 = this.add
+            .tileSprite(
+              0,
+              this.bgHeight - 74 - 100,
+              this.worldWidth,
+              174,
+              "parralaxbottom2"
+            )
+            .setOrigin(0, 0)
+            .setDepth(20000);
+        }
+
+        createGameUI() {
+          // Create score display
+          this.scoreText = this.add.text(25, 25, "Score: 0", {
+            fontFamily: "Fobble",
+            fontSize: "38px",
+            fill: "#ffffff",
+            stroke: "#000000",
+            strokeThickness: 0.5,
+          });
+          this.scoreText.setDepth(200000);
+          this.scoreText.setScrollFactor(0);
+
+          // Create wave display
+          this.waveText = this.add.text(
+            this.cameras.main.width - 25,
+            25,
+            "Wave: 1",
+            {
+              fontFamily: "Fobble",
+              fontSize: "38px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 0.5,
+            }
+          );
+          this.waveText.setOrigin(1, 0); // Right-align
+          this.waveText.setDepth(200000);
+          this.waveText.setScrollFactor(0);
+        }
+
+        createBulletTexture() {
+          const graphics = this.add.graphics();
+          graphics.fillStyle(0xffff00);
+          graphics.fillCircle(8, 8, 4);
+          graphics.generateTexture("bullet", 16, 16);
+          graphics.destroy();
+        }
+
+        createParticleSystems() {
+          // No longer using particle systems - replaced with explosion animations
+        }
+
+        createParticleEffect(x, y, type, color, count = 8) {
+          console.log(
+            `Creating particles at ${x}, ${y} with color ${color.toString(16)}`
+          );
+
+          // Create particle graphics at the target position
+          const particles = this.add.graphics();
+          particles.setPosition(x, y);
+          particles.setDepth(999);
+
+          // Generate random particles
+          for (let i = 0; i < count; i++) {
+            const angle = (Math.PI * 2 * i) / count + Math.random() * 0.5;
+            const distance = Math.random() * 20;
+            const particleX = Math.cos(angle) * distance;
+            const particleY = Math.sin(angle) * distance;
+            const size = Math.random() * 2; // Bigger particles
+
+            particles.fillStyle(color, 1.0); // Full opacity
+            particles.fillCircle(particleX, particleY, size);
+          }
+
+          // Animate particles
+          this.tweens.add({
+            targets: particles,
+            alpha: 0,
+            scaleX: 3,
+            scaleY: 3,
+            duration: 800,
+            ease: "Power2.easeOut",
+            onComplete: () => {
+              particles.destroy();
+            },
+          });
+        }
+
+        createMobileJoystick() {
+          // Always create joystick (no mobile detection)
+          // this.input.addPointer(2); // Add second pointer for multi-touch
+
+          const joystickSize = 60;
+          const knobSize = 20;
+          const joystickX = 90; // 10px more to the right
+          const joystickY = this.cameras.main.height - 90; // 10px more to the top
+
+          // Track joystick input (like keyboard isDown) - binary states
+          this.mobileInput = {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+          };
+
+          // Joystick properties
+          this.joystick = {
+            base: null,
+            knob: null,
+            isActive: false,
+            centerX: joystickX,
+            centerY: joystickY,
+            maxDistance: joystickSize - knobSize - 5,
+            activePointer: null,
+          };
+
+          // Create joystick base (outer circle) - brand colors
+          this.joystick.base = this.add
+            .circle(joystickX, joystickY, joystickSize, 0x00142d, 0.9)
+            .setDepth(70000)
+            .setScrollFactor(0)
+            .setStrokeStyle(4, 0x477dfd, 1.0)
+            .setInteractive({ useHandCursor: false });
+
+          // Create joystick knob (inner circle) - brand colors
+          this.joystick.knob = this.add
+            .circle(joystickX, joystickY, knobSize, 0x80abff, 0.95)
+            .setDepth(71000)
+            .setScrollFactor(0)
+            .setStrokeStyle(3, 0x477dfd, 1.0)
+            .setInteractive({ useHandCursor: false });
+
+          // Joystick input handling - base events
+          this.joystick.base.on("pointerdown", (pointer) => {
+            this.joystick.isActive = true;
+            this.joystick.activePointer = pointer;
+            this.updateJoystickInput(pointer);
+          });
+
+          this.joystick.base.on("pointerup", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.joystick.isActive = false;
+              this.joystick.activePointer = null;
+              this.resetJoystickInput();
+            }
+          });
+
+          this.joystick.base.on("pointermove", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.updateJoystickInput(pointer);
+            }
+          });
+
+          // Also handle knob events for better touch response
+          this.joystick.knob.on("pointerdown", (pointer) => {
+            this.joystick.isActive = true;
+            this.joystick.activePointer = pointer;
+            this.updateJoystickInput(pointer);
+          });
+
+          this.joystick.knob.on("pointerup", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.joystick.isActive = false;
+              this.joystick.activePointer = null;
+              this.resetJoystickInput();
+            }
+          });
+
+          this.joystick.knob.on("pointermove", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.updateJoystickInput(pointer);
+            }
+          });
+
+          // Global pointerup to handle finger lifted outside joystick area
+          this.input.on("pointerup", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.joystick.isActive = false;
+              this.joystick.activePointer = null;
+              this.resetJoystickInput();
+            }
+          });
+
+          // Global pointermove to handle finger movement anywhere on screen
+          this.input.on("pointermove", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.updateJoystickInput(pointer);
+            }
+          });
+        }
+
+        updateJoystickInput(pointer) {
+          const deltaX = pointer.x - this.joystick.centerX;
+          const deltaY = pointer.y - this.joystick.centerY;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+          // Reset all directions first
+          this.mobileInput.up = false;
+          this.mobileInput.down = false;
+          this.mobileInput.left = false;
+          this.mobileInput.right = false;
+
+          // Only set directions if we're far enough from center (like pressing a key)
+          if (distance > 15) {
+            // Dead zone - must move at least 15 pixels from center
+            // Allow diagonal movement by checking each axis independently
+
+            // Horizontal movement
+            if (Math.abs(deltaX) > 15) {
+              if (deltaX < 0) {
+                this.mobileInput.left = true; // Like pressing left arrow key
+              } else {
+                this.mobileInput.right = true; // Like pressing right arrow key
+              }
+            }
+
+            // Vertical movement
+            if (Math.abs(deltaY) > 15) {
+              if (deltaY < 0) {
+                this.mobileInput.up = true; // Like pressing up arrow key
+              } else {
+                this.mobileInput.down = true; // Like pressing down arrow key
+              }
+            }
+          }
+
+          // Update knob position (constrained to joystick area)
+          if (distance <= this.joystick.maxDistance) {
+            this.joystick.knob.setPosition(pointer.x, pointer.y);
+          } else {
+            const angle = Math.atan2(deltaY, deltaX);
+            const constrainedX =
+              this.joystick.centerX +
+              Math.cos(angle) * this.joystick.maxDistance;
+            const constrainedY =
+              this.joystick.centerY +
+              Math.sin(angle) * this.joystick.maxDistance;
+            this.joystick.knob.setPosition(constrainedX, constrainedY);
+          }
+        }
+
+        resetJoystickInput() {
+          // Reset all directions (like releasing all keys)
+          this.mobileInput.up = false;
+          this.mobileInput.down = false;
+          this.mobileInput.left = false;
+          this.mobileInput.right = false;
+
+          // Stop player movement immediately
+          if (this.player && this.player.body) {
+            this.player.body.setVelocity(0, 0);
+          }
+
+          // Smooth return to center
+          this.tweens.add({
+            targets: this.joystick.knob,
+            x: this.joystick.centerX,
+            y: this.joystick.centerY,
+            duration: 200,
+            ease: "Back.easeOut",
+          });
+        }
+
+        updateJoystickPosition(x, y) {
+          if (!this.joystick.isActive) return;
+
+          const dx = x - this.joystick.centerX;
+          const dy = y - this.joystick.centerY;
+          const distance = Math.sqrt(dx * dx + dy * dy);
+
+          if (distance <= this.joystick.maxDistance) {
+            // Within range, move knob to touch position
+            this.joystick.knob.x = x;
+            this.joystick.knob.y = y;
+            this.joystick.currentX = dx / this.joystick.maxDistance;
+            this.joystick.currentY = dy / this.joystick.maxDistance;
+          } else {
+            // Outside range, clamp to edge
+            const angle = Math.atan2(dy, dx);
+            this.joystick.knob.x =
+              this.joystick.centerX +
+              Math.cos(angle) * this.joystick.maxDistance;
+            this.joystick.knob.y =
+              this.joystick.centerY +
+              Math.sin(angle) * this.joystick.maxDistance;
+            this.joystick.currentX = Math.cos(angle);
+            this.joystick.currentY = Math.sin(angle);
+          }
+        }
+
+        resetJoystick() {
+          this.joystick.knob.x = this.joystick.centerX;
+          this.joystick.knob.y = this.joystick.centerY;
+          this.joystick.currentX = 0;
+          this.joystick.currentY = 0;
+        }
+
+        createWeaponSwitchButton() {
+          // Only show if multiple weapons are unlocked
+          if (gameData.unlockedWeapons.length <= 1) return;
+
+          // Weapon switch button properties
+          this.weaponSwitchButton = {
+            button: null,
+            centerX: this.cameras.main.width - 80,
+            centerY: this.cameras.main.height - 80, // Above shoot button
+            currentWeaponIndex: 0,
+          };
+
+          // Find current weapon index
+          this.weaponSwitchButton.currentWeaponIndex =
+            gameData.unlockedWeapons.indexOf(this.selectedWeapon);
+          if (this.weaponSwitchButton.currentWeaponIndex === -1) {
+            this.weaponSwitchButton.currentWeaponIndex = 0;
+          }
+
+          // Create weapon switch button - brand colors
+          this.weaponSwitchButton.button = this.add.circle(
+            this.weaponSwitchButton.centerX,
+            this.weaponSwitchButton.centerY,
+            30,
+            0x00142d,
+            0.8
+          );
+          this.weaponSwitchButton.button.setDepth(70000);
+          this.weaponSwitchButton.button.setScrollFactor(0);
+          this.weaponSwitchButton.button.setStrokeStyle(3, 0x477dfd, 1.0);
+
+          // Add weapon icon/text
+          const weaponText = this.add.text(
+            this.weaponSwitchButton.centerX,
+            this.weaponSwitchButton.centerY,
+            this.getWeaponIcon(this.selectedWeapon),
+            {
+              fontFamily: "Fobble",
+              fontSize: "20px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 2,
+              align: "center",
+            }
+          );
+          weaponText.setOrigin(0.5);
+          weaponText.setDepth(71000);
+          weaponText.setScrollFactor(0);
+
+          // Store text reference for updates
+          this.weaponSwitchButton.text = weaponText;
+
+          // Add touch events
+          this.weaponSwitchButton.button.setInteractive();
+
+          // Touch start
+          this.weaponSwitchButton.button.on("pointerdown", () => {
+            this.switchWeapon();
+            this.weaponSwitchButton.button.setFillStyle(0x80abff, 0.9);
+            this.weaponSwitchButton.button.setScale(0.9);
+          });
+
+          // Touch end
+          this.weaponSwitchButton.button.on("pointerup", () => {
+            this.weaponSwitchButton.button.setFillStyle(0x00142d, 0.8);
+            this.weaponSwitchButton.button.setScale(1.0);
+          });
+
+          // Touch leave
+          this.weaponSwitchButton.button.on("pointerout", () => {
+            this.weaponSwitchButton.button.setFillStyle(0x00142d, 0.8);
+            this.weaponSwitchButton.button.setScale(1.0);
+          });
+        }
+
+        getWeaponIcon(weaponType) {
+          switch (weaponType) {
+            case "pistol":
+              return "🔫";
+            case "icegun":
+              return "❄️";
+            case "lazergun":
+              return "⚡";
+            case "boxinggun":
+              return "🥊";
+            default:
+              return "🔫";
+          }
+        }
+
+        switchWeapon() {
+          // Only switch if multiple weapons are unlocked
+          const unlocked = gameData.unlockedWeapons || [];
+          if (unlocked.length <= 1) return;
+
+          // Determine current index (fallback-safe)
+          let idx =
+            this.weaponSwitchButton &&
+            typeof this.weaponSwitchButton.currentWeaponIndex === "number"
+              ? this.weaponSwitchButton.currentWeaponIndex
+              : unlocked.indexOf(this.selectedWeapon);
+          if (idx < 0) idx = 0;
+
+          // Cycle to next weapon
+          idx = (idx + 1) % unlocked.length;
+
+          // Persist on button object if present
+          if (this.weaponSwitchButton) {
+            this.weaponSwitchButton.currentWeaponIndex = idx;
+          }
+
+          // Set new weapon
+          this.selectedWeapon = unlocked[idx];
+          gameData.saveCurrentWeapon(this.selectedWeapon);
+
+          // Update button icon if button exists
+          if (this.weaponSwitchButton && this.weaponSwitchButton.text) {
+            this.weaponSwitchButton.text.setText(
+              this.getWeaponIcon(this.selectedWeapon)
+            );
+          }
+
+          // Update player gun sprite
+          this.updatePlayerGun();
+
+          // Visual feedback
+          this.cameras.main.shake(50, 0.002);
+
+          // Play click sound
+          if (!gameData.isMuted) {
+            this.sound.play("ClickFx", { volume: 0.3 });
+          }
+        }
+
+        updatePlayerGun() {
+          // Update gun sprite based on selected weapon
+          const gunTextures = {
+            pistol: "gun1", // Pistol uses "gun1" texture key
+            icegun: "icegun",
+            lazergun: "lazergun",
+            boxinggun: "boxinggun",
+          };
+
+          const textureKey = gunTextures[this.selectedWeapon];
+          if (textureKey && this.playerGun) {
+            this.playerGun.setTexture(textureKey);
+          }
+        }
+
+        updatePlayerHealthBar() {
+          if (!this.playerHealthBarBg || !this.playerHealthBarFill) return;
+
+          const barWidth = 60;
+          const barHeight = 8;
+          const x = -barWidth / 2; // Relative to container center
+          const y = -65; // 60 pixels above player
+
+          // Clear previous graphics
+          this.playerHealthBarBg.clear();
+          this.playerHealthBarFill.clear();
+
+          // Draw background (dark red)
+          this.playerHealthBarBg.fillStyle(0x330000, 0.8);
+          this.playerHealthBarBg.fillRoundedRect(x, y, barWidth, barHeight, 4);
+
+          // Draw border
+          this.playerHealthBarBg.lineStyle(2, 0xffffff, 1);
+          this.playerHealthBarBg.strokeRoundedRect(
+            x,
+            y,
+            barWidth,
+            barHeight,
+            4
+          );
+
+          // Draw health fill
+          const healthPercent = this.health / 10;
+          const fillWidth = barWidth * healthPercent;
+
+          if (healthPercent > 0.6) {
+            this.playerHealthBarFill.fillStyle(0x00ff00, 0.9); // Green
+          } else if (healthPercent > 0.3) {
+            this.playerHealthBarFill.fillStyle(0xffff00, 0.9); // Yellow
+          } else {
+            this.playerHealthBarFill.fillStyle(0xff0000, 0.9); // Red
+          }
+
+          this.playerHealthBarFill.fillRoundedRect(
+            x,
+            y,
+            fillWidth,
+            barHeight,
+            4
+          );
+        }
+
+        createEnemyHealthBar(enemy) {
+          // Create health bar background
+          const healthBarBg = this.add.graphics();
+          healthBarBg.setDepth(998);
+
+          // Create health bar fill
+          const healthBarFill = this.add.graphics();
+          healthBarFill.setDepth(999);
+
+          // Store references on the enemy
+          enemy.healthBarBg = healthBarBg;
+          enemy.healthBarFill = healthBarFill;
+
+          this.updateEnemyHealthBar(enemy);
+        }
+
+        updateEnemyHealthBar(enemy) {
+          if (!enemy.healthBarBg || !enemy.healthBarFill || !enemy.active)
+            return;
+
+          const barWidth = 40;
+          const barHeight = 6;
+          const x = enemy.x - barWidth / 2;
+          const y = enemy.y - 50;
+
+          // Clear previous graphics
+          enemy.healthBarBg.clear();
+          enemy.healthBarFill.clear();
+
+          // Draw background (dark red)
+          enemy.healthBarBg.fillStyle(0x330000, 0.8);
+          enemy.healthBarBg.fillRoundedRect(x, y, barWidth, barHeight, 3);
+
+          // Draw border
+          enemy.healthBarBg.lineStyle(1, 0xffffff, 1);
+          enemy.healthBarBg.strokeRoundedRect(x, y, barWidth, barHeight, 3);
+
+          // Draw health fill
+          const healthPercent = enemy.health / enemy.maxHealth;
+          const fillWidth = barWidth * healthPercent;
+
+          if (healthPercent > 0.6) {
+            enemy.healthBarFill.fillStyle(0x00ff00, 0.9); // Green
+          } else if (healthPercent > 0.3) {
+            enemy.healthBarFill.fillStyle(0xffff00, 0.9); // Yellow
+          } else {
+            enemy.healthBarFill.fillStyle(0xff0000, 0.9); // Red
+          }
+
+          enemy.healthBarFill.fillRoundedRect(x, y, fillWidth, barHeight, 3);
+        }
+
+        getBulletHitColor() {
+          switch (this.selectedWeapon) {
+            case "icegun":
+              return 0xccccff; // Cyan for ice
+            case "lazergun":
+              return 0xff0000; // Red for laser
+            case "boxinggun":
+              return 0xffff00; // Yellow for boxing gloves
+            default:
+              return 0xffff00; // Default yellow
+          }
+        }
+
+        // Difficulty scaling methods
+        calculatePerformanceScore() {
+          const accuracy =
+            this.shotsFired > 0 ? this.shotsHit / this.shotsFired : 1;
+
+          const damagePenalty = this.damageTaken * 10;
+          const comboBonus = this.maxCombo * 5;
+
+          // Performance score: accuracy + combo - damage
+          this.performanceScore = accuracy * 100 + comboBonus - damagePenalty;
+          return this.performanceScore;
+        }
+
+        adjustDifficulty() {
+          const performance = this.calculatePerformanceScore();
+
+          // Adjust difficulty based on performance only (no time factor)
+          if (performance > 150) {
+            // Player is doing well, increase difficulty
+            this.difficultyLevel = Math.min(this.difficultyLevel + 0.1, 3.0);
+          } else if (performance < 50) {
+            // Player is struggling, decrease difficulty
+            this.difficultyLevel = Math.max(this.difficultyLevel - 0.1, 0.5);
+          }
+
+          console.log(
+            `Difficulty adjusted to: ${this.difficultyLevel.toFixed(
+              2
+            )} (Performance: ${performance.toFixed(1)})`
+          );
+        }
+
+        getScaledEnemyStats(baseType) {
+          const baseStats = {
+            regular: {
+              speed: 95,
+              health: 1,
+              attackRange: 70, // Reduced from 80
+              attackDelay: 2000,
+              size: 60,
+            },
+            heavy: {
+              speed: 65,
+              health: 2,
+              attackRange: 75, // Reduced from 90
+              attackDelay: 3000,
+              size: 70,
+            },
+            flying: {
+              speed: 90,
+              health: 1,
+              attackRange: 80, // Reduced from 100
+              attackDelay: 1500,
+              size: 80,
+            },
+            freeze: {
+              speed: 120,
+              health: 1,
+              attackRange: 90, // Reduced from 120
+              attackDelay: 2000,
+              size: 50,
+            },
+          };
+
+          const stats = baseStats[baseType];
+          return {
+            speed: stats.speed, // Keep speed constant
+            health: Math.max(
+              1,
+              Math.floor(stats.health * (1 + (this.currentWave - 1) * 0.25)) // Health increases by 25% per wave
+            ),
+            attackRange: Math.floor(
+              stats.attackRange * (1 + this.difficultyLevel * 0.2)
+            ),
+            attackDelay: Math.max(
+              1000,
+              Math.floor(stats.attackDelay / this.difficultyLevel)
+            ),
+            size: Math.floor(stats.size * (1 + this.difficultyLevel * 0.1)),
+            speed: Math.floor(stats.speed + this.currentWave),
+          };
+        }
+
+        getScaledSpawnDelay() {
+          const baseDelay = 3000;
+          const minDelay = 2000;
+          const maxDelay = 4000;
+
+          // Faster spawning as difficulty increases, but with limits
+          const scaledDelay = Math.max(
+            minDelay,
+            Math.min(maxDelay, baseDelay / this.difficultyLevel)
+          );
+          return scaledDelay;
+        }
+
+        getScaledHeavyGuardChance() {
+          const baseChance = this.currentWave >= 2 ? 0.33 : 0;
+          const maxChance = 0.7;
+
+          // Increase heavy guard chance with difficulty
+          return Math.min(
+            maxChance,
+            baseChance + (this.difficultyLevel - 1) * 0.1
+          );
+        }
+
+        setupDynamicSpawning() {
+          // Start with initial spawn delay
+          const initialDelay = this.getScaledSpawnDelay();
+
+          this.time.addEvent({
+            delay: initialDelay,
+            callback: this.spawnEnemy,
+            callbackScope: this,
+            loop: true,
+          });
+        }
+
+        createBulletHitEffect(x, y) {
+          /*   const explosion = this.add.sprite(x, y, "explosion");
+          explosion.setScale(0.6);
+          explosion.setDepth(60000);
+          explosion.play("explosion");
+
+          // Destroy the explosion sprite when animation completes
+          explosion.on("animationcomplete", () => {
+            explosion.destroy();
+          }); */
+        }
+
+        createBloodSplashEffect(x, y) {
+          const explosion = this.add.sprite(x, y, "explosion");
+          explosion.setScale(0.8);
+          explosion.setDepth(999);
+
+          explosion.play("explosion");
+
+          // Destroy the explosion sprite when animation completes
+          explosion.on("animationcomplete", () => {
+            explosion.destroy();
+          });
+        }
+
+        createCriticalHitEffect(x, y) {
+          // Create a bright yellow flash for critical hits
+          const critText = this.add.text(x, y - 40, "CRIT!", {
+            fontFamily: "Fobble",
+            fontSize: "20px",
+            fill: "#ffff00",
+            stroke: "#ff0000",
+            strokeThickness: 3,
+          });
+          critText.setOrigin(0.5);
+          critText.setDepth(999);
+
+          this.tweens.add({
+            targets: critText,
+            y: y - 70,
+            alpha: 0,
+            scale: 1.5,
+            duration: 800,
+            ease: "Power2.easeOut",
+            onComplete: () => critText.destroy(),
+          });
+        }
+
+        createExplosion(x, y, damage, hitEnemies = null) {
+          // Play explosion sound
+          if (!gameData.isMuted) {
+            this.sound.play("ExplosionFx", { volume: 0.6 });
+          }
+
+          // Visual explosion effect
+          const explosion = this.add.circle(x, y, 10, 0xff6600, 0.8);
+          explosion.setDepth(999);
+
+          this.tweens.add({
+            targets: explosion,
+            radius: 80,
+            alpha: 0,
+            duration: 400,
+            ease: "Power2.easeOut",
+            onComplete: () => explosion.destroy(),
+          });
+
+          // Particle effect for explosion
+          this.createParticleEffect(x, y, "explosion", 0xff6600, 16);
+
+          // Deal damage to nearby enemies
+          const explosionRadius = 80;
+          this.enemies.children.iterate((enemy) => {
+            if (!enemy || !enemy.active || enemy.isDying) return;
+
+            // Skip if this explosion has already hit this enemy
+            if (hitEnemies && hitEnemies.has(enemy)) {
+              return;
+            }
+
+            const distance = Phaser.Math.Distance.Between(
+              x,
+              y,
+              enemy.x,
+              enemy.y
+            );
+            if (distance < explosionRadius) {
+              enemy.health -= damage;
+              this.updateEnemyHealthBar(enemy);
+
+              // Mark this enemy as hit by this explosion
+              if (hitEnemies) {
+                hitEnemies.add(enemy);
+              }
+
+              // Play hit sound with random pitch variation
+              if (!gameData.isMuted) {
+                const pitch = 0.8 + Math.random() * 0.4; // Random pitch between 0.8 and 1.2
+                this.sound.play("HitFx", {
+                  volume: 0.8,
+                  detune: (pitch - 1) * 1200,
+                });
+              }
+
+              // Visual feedback (preserve slow tint if active)
+              const wasSlowed = enemy.isSlowed;
+              enemy.setTint(0xff6600);
+              this.time.delayedCall(200, () => {
+                if (enemy.active) {
+                  if (wasSlowed && enemy.isSlowed) {
+                    enemy.setTint(0xccccff); // Back to ice blue
+                  } else {
+                    enemy.clearTint();
+                  }
+                }
+              });
+
+              // Check if enemy dies from explosion
+              if (enemy.health <= 0 && !enemy.isDying) {
+                this.createBloodSplashEffect(enemy.x, enemy.y);
+                this.handleEnemyDeath(enemy);
+                this.enemiesKilled++;
+
+                // Score and floating text are handled in the main bullet collision handler
+                // No need to duplicate here
+
+                if (this.enemiesKilled >= this.maxEnemies) {
+                  this.completeWave();
+                }
+              }
+            }
+          });
+        }
+
+        applySlowEffect(enemy) {
+          if (enemy.isDying) return;
+
+          // Store original speed if not already slowed
+          if (!enemy.isSlowed) {
+            enemy.originalSpeed = enemy.speed;
+            enemy.isSlowed = true;
+          }
+
+          // Apply slow (50% speed reduction)
+          enemy.speed = enemy.originalSpeed * 0.5;
+
+          // Visual feedback - tint enemy cyan/blue
+          enemy.setTint(0xccccff);
+
+          // Remove existing slow timer if any
+          if (enemy.slowTimer) {
+            enemy.slowTimer.remove();
+          }
+
+          // Slow lasts 2 seconds
+          enemy.slowTimer = this.time.delayedCall(2000, () => {
+            if (enemy.active && !enemy.isDying) {
+              enemy.speed = enemy.originalSpeed;
+              enemy.isSlowed = false;
+              enemy.clearTint();
+            }
+          });
+        }
+
+        chainLightning(x, y, hitEnemy, damage) {
+          // Play lightning sound
+          if (!gameData.isMuted) {
+            this.sound.play("LightningFx", { volume: 0.6 });
+          }
+
+          // Find nearest enemy within range (not the one already hit)
+          let nearestEnemy = null;
+          let nearestDistance = 200; // Chain range (increased from 150)
+
+          this.enemies.children.iterate((enemy) => {
+            if (!enemy || !enemy.active || enemy.isDying || enemy === hitEnemy)
+              return;
+
+            const distance = Phaser.Math.Distance.Between(
+              x,
+              y,
+              enemy.x,
+              enemy.y
+            );
+            if (distance < nearestDistance) {
+              nearestDistance = distance;
+              nearestEnemy = enemy;
+            }
+          });
+
+          console.log(
+            "Chain lightning search: Found enemy?",
+            nearestEnemy !== null,
+            "Distance:",
+            nearestDistance
+          );
+
+          // If we found a target, chain to it
+          if (nearestEnemy) {
+            console.log("Chaining to enemy at", nearestEnemy.x, nearestEnemy.y);
+
+            // Draw lightning bolt from hit enemy position to chained enemy
+            const lightning = this.add.graphics();
+            lightning.lineStyle(4, 0xffff00, 1);
+            lightning.beginPath();
+            lightning.moveTo(hitEnemy.x, hitEnemy.y);
+            lightning.lineTo(nearestEnemy.x, nearestEnemy.y);
+            lightning.strokePath();
+            lightning.setDepth(999);
+
+            // Add glow effect
+            const lightning2 = this.add.graphics();
+            lightning2.lineStyle(8, 0xffff00, 0.3);
+            lightning2.beginPath();
+            lightning2.moveTo(hitEnemy.x, hitEnemy.y);
+            lightning2.lineTo(nearestEnemy.x, nearestEnemy.y);
+            lightning2.strokePath();
+            lightning2.setDepth(999);
+
+            // Animate and destroy lightning
+            this.tweens.add({
+              targets: [lightning, lightning2],
+              alpha: 0,
+              duration: 300,
+              onComplete: () => {
+                lightning.destroy();
+                lightning2.destroy();
+              },
+            });
+
+            // Deal damage to chained enemy
+            nearestEnemy.health -= damage;
+
+            // Play hit sound with random pitch variation
+            if (!gameData.isMuted) {
+              const pitch = 0.8 + Math.random() * 0.4; // Random pitch between 0.8 and 1.2
+              this.sound.play("HitFx", {
+                volume: 0.8,
+                detune: (pitch - 1) * 1200,
+              });
+            }
+
+            // Visual feedback
+            nearestEnemy.setTint(0xffff00);
+            this.time.delayedCall(200, () => {
+              if (nearestEnemy.active) nearestEnemy.clearTint();
+            });
+
+            // Check if chained enemy dies
+            if (nearestEnemy.health <= 0 && !nearestEnemy.isDying) {
+              this.createBloodSplashEffect(nearestEnemy.x, nearestEnemy.y);
+              this.handleEnemyDeath(nearestEnemy);
+              this.enemiesKilled++;
+
+              // Score and floating text are handled in the main bullet collision handler
+              // No need to duplicate here
+
+              if (this.enemiesKilled >= this.maxEnemies) {
+                this.completeWave();
+              }
+            }
+          } else {
+            console.log("No enemy in chain range");
+          }
+        }
+
+        freezeAllEnemies() {
+          console.log("FREEZE BLAST ACTIVATED!");
+
+          // Play freeze sound
+          if (!gameData.isMuted) {
+            this.sound.play("FreezeFx", { volume: 0.7 });
+          }
+
+          // Create freeze effect
+          const freezeEffect = this.add.graphics();
+          freezeEffect.fillStyle(0xccccff, 0.3);
+          freezeEffect.fillRect(0, 0, this.worldWidth, this.bgHeight);
+          freezeEffect.setDepth(50000);
+
+          // Animate freeze effect
+          this.tweens.add({
+            targets: freezeEffect,
+            alpha: 0,
+            duration: 1000,
+            onComplete: () => freezeEffect.destroy(),
+          });
+
+          // Freeze all enemies
+          this.enemies.children.iterate((enemy) => {
+            if (!enemy || !enemy.active || enemy.isDying) return;
+
+            // Store original speed
+            if (!enemy.isFrozen) {
+              enemy.originalSpeed = enemy.speed;
+              enemy.isFrozen = true;
+            }
+
+            // Stop enemy movement
+            enemy.speed = 0;
+            enemy.body.setVelocity(0, 0);
+
+            // Visual effect - tint cyan
+            enemy.setTint(0xccccff);
+
+            // Remove existing freeze timer
+            if (enemy.freezeTimer) {
+              enemy.freezeTimer.remove();
+            }
+
+            // Unfreeze after 2 seconds
+            enemy.freezeTimer = this.time.delayedCall(2000, () => {
+              if (enemy.active && !enemy.isDying) {
+                enemy.speed = enemy.originalSpeed;
+                enemy.isFrozen = false;
+                enemy.clearTint();
+              }
+            });
+          });
+        }
+
+        createFloatingScore(x, y, points, comboText = "") {
+          // Create floating score text
+          const scoreText = this.add.text(x, y, `+${points}${comboText}`, {
+            fontFamily: "Fobble",
+            fontSize: "24px",
+            fill: "#ffd700", // Gold color
+            stroke: "#000000",
+            strokeThickness: 3,
+            align: "center",
+          });
+
+          scoreText.setOrigin(0.5);
+          scoreText.setDepth(999); // High depth to appear above everything
+
+          // Scale up for combos
+          const scale = comboText ? 1.2 : 1.0;
+          scoreText.setScale(scale);
+
+          // Animate the floating score
+          this.tweens.add({
+            targets: scoreText,
+            y: y - 60, // Float up 60 pixels
+            alpha: 0, // Fade out
+            scale: scale * 1.5, // Grow slightly
+            duration: 1500, // 1.5 seconds
+            ease: "Power2.easeOut",
+            onComplete: () => {
+              scoreText.destroy(); // Clean up
+            },
+          });
+        }
+
+        checkEnemyCollision(targetX, targetY) {
+          // Phaser's collider handles collision automatically
+          // Just check if target position is within world bounds
+          return (
+            targetX < 0 ||
+            targetX > this.worldWidth ||
+            targetY < this.laneTop + 15 ||
+            targetY > this.laneBottom - 15
+          );
+        }
+
+        handleEnemyDeath(enemy) {
+          enemy.body.setVelocity(0, 0);
+          enemy.body.enable = false;
+          let deathAnim = "enemyDeath";
+          if (enemy.enemyType === "heavy") {
+            deathAnim = "enemy2Death";
+          } else if (
+            enemy.enemyType === "flying" ||
+            enemy.enemyType === "freeze"
+          ) {
+            deathAnim = "enemy3Death";
+          }
+          enemy.play(deathAnim);
+          enemy.isDying = true;
+          enemy.deathStartX = enemy.x;
+          enemy.deathStartTime = this.time.now;
+
+          // Screen shake on enemy death
+          this.cameras.main.shake(100, 0.005);
+
+          // Particle effect on enemy death
+          let deathColor = 0xff0000; // Red for regular
+          if (enemy.enemyType === "heavy") {
+            deathColor = 0xff6600; // Orange for heavy
+          } else if (enemy.enemyType === "flying") {
+            deathColor = 0x00aaff; // Blue for flying robot
+          } else if (enemy.enemyType === "freeze") {
+            deathColor = 0xccccff; // Cyan for freeze robot
+          }
+          this.createParticleEffect(enemy.x, enemy.y, "death", deathColor, 12);
+          enemy.once("animationcomplete", () => {
+            enemy.isFading = true;
+            enemy.fadeStartTime = this.time.now;
+          });
+
+          // Clean up health bars
+          if (enemy.healthBarBg) {
+            enemy.healthBarBg.destroy();
+          }
+          if (enemy.healthBarFill) {
+            enemy.healthBarFill.destroy();
+          }
+        }
+
+        spawnEnemy() {
+          if (!this.gameRunning || this.enemiesSpawned >= this.maxEnemies)
+            return;
+
+          // Spawn enemies from both front and back of the player
+          let x, y;
+          const spawnDistance = Phaser.Math.Between(200, 400);
+
+          // 70% chance to spawn in front, 30% chance to spawn behind
+          if (Math.random() < 0.7) {
+            // Spawn in front (to the right)
+            x = this.player.x + spawnDistance;
+            y = Phaser.Math.Between(this.laneTop, this.laneBottom);
+
+            // Don't spawn beyond the world boundary
+            if (x > this.worldWidth - 100) return;
+          } else {
+            // Spawn behind (to the left)
+            x = this.player.x - spawnDistance;
+            y = Phaser.Math.Between(this.laneTop, this.laneBottom);
+
+            // Don't spawn beyond the world boundary
+            if (x < 100) return;
+          }
+
+          // Choose enemy type based on difficulty-scaled chance
+          let enemyType, enemyKey;
+          const heavyGuardChance = this.getScaledHeavyGuardChance();
+          const flyingRobotChance = this.currentWave >= 4 ? 0.05 : 0; // 5% chance from wave 1+
+          const freezeRobotChance = this.currentWave >= 3 ? 0.1 : 0; // 10% chance from wave 2+
+
+          const random = Math.random();
+          if (random < flyingRobotChance) {
+            enemyType = "flying";
+            enemyKey = "enemy3Walk";
+          } else if (random < flyingRobotChance + freezeRobotChance) {
+            enemyType = "freeze";
+            enemyKey = "enemy3Walk";
+          } else if (
+            random <
+            flyingRobotChance + freezeRobotChance + heavyGuardChance
+          ) {
+            enemyType = "heavy";
+            enemyKey = "enemy2Walk";
+          } else {
+            enemyType = "regular";
+            enemyKey = "enemyWalk";
+          }
+
+          // Get scaled stats based on difficulty
+          const scaledStats = this.getScaledEnemyStats(enemyType);
+
+          const enemy = this.physics.add.sprite(x, y, enemyKey);
+          enemy.setDisplaySize(scaledStats.size, scaledStats.size);
+          enemy.body.setCollideWorldBounds(false);
+          enemy.body.setAllowGravity(false);
+          // Set simple, consistent collision body size
+          const collisionSize = 200; // Fixed collision size for all enemies
+          enemy.body.setSize(collisionSize, collisionSize);
+
+          // Make enemies immovable so they don't get pushed around
+          enemy.body.setImmovable(true);
+          enemy.speed = scaledStats.speed;
+          enemy.attackRange = scaledStats.attackRange;
+          enemy.attackCooldown = 0;
+          enemy.attackDelay = scaledStats.attackDelay;
+          enemy.isAttacking = false;
+          enemy.hasHitPlayer = false;
+          enemy.enemyType = enemyType;
+          enemy.health = scaledStats.health;
+          enemy.maxHealth = scaledStats.health;
+          enemy.spawnDirection = x > this.player.x ? 1 : -1; // 1 for right side, -1 for left side
+
+          // Flip sprite if enemy spawned from behind
+          if (enemy.spawnDirection === -1) {
+            enemy.setFlipX(true);
+          }
+
+          enemy.play(enemyKey);
+
+          // Add flying robot specific properties
+          if (enemyType === "flying") {
+            enemy.isFlying = true;
+            enemy.shootCooldown = 0;
+            enemy.shootDelay = 5000; // Shoot every 5 seconds
+            enemy.movementPattern = "straight"; // Will move in straight lines
+            enemy.directionChangeTimer = 0;
+            enemy.directionChangeDelay = 3000; // Change direction every 3 seconds
+            enemy.currentDirection = Math.random() < 0.5 ? 1 : -1; // Random initial direction
+          }
+
+          // Add freeze robot specific properties
+          if (enemyType === "freeze") {
+            enemy.isFlying = true; // Uses same movement as flying robot
+            enemy.isFreezeRobot = true; // Special flag for freeze robot
+            enemy.shootCooldown = 0;
+            enemy.shootDelay = 2000; // Shoot every 2 seconds
+            enemy.movementPattern = "straight"; // Will move in straight lines
+            enemy.directionChangeTimer = 0;
+            enemy.directionChangeDelay = 3000; // Change direction every 3 seconds
+            enemy.currentDirection = Math.random() < 0.5 ? 1 : -1; // Random initial direction
+            enemy.setTint(0xccccff); // Cyan tint
+          }
+
+          // Create health bar for enemy
+          this.createEnemyHealthBar(enemy);
+
+          this.enemies.add(enemy);
+
+          this.enemiesSpawned++;
+        }
+
+        shoot() {
+          // Safety check - don't shoot if player is destroyed
+          if (!this.player || !this.player.active || !this.bullets) {
+            return;
+          }
+
+          // Play gunshot sound
+          if (!gameData.isMuted) {
+            this.sound.play("GunShotFx", { volume: 0.1 });
+          }
+
+          // Track shots fired for accuracy calculation
+          this.shotsFired++;
+
+          // Calculate bullet speed with upgrade and weapon type
+          const baseBulletSpeed = 250;
+          let weaponSpeedMultiplier = 1.0;
+          let weaponSizeMultiplier = 1.0;
+
+          // Boxing gun bullets are faster and bigger
+          if (this.selectedWeapon === "boxinggun") {
+            weaponSpeedMultiplier = 1.3; // 30% faster
+            weaponSizeMultiplier = 1.5; // 50% bigger
+          }
+
+          const bulletSpeed =
+            baseBulletSpeed *
+            weaponSpeedMultiplier *
+            (1 + this.activeUpgrades.bulletSpeed * 0.5);
+          const direction = this.playerSprite.flipX ? -1 : 1;
+
+          // Multishot upgrade - fire multiple bullets
+          const shotsToFire = 1 + this.activeUpgrades.multishot;
+          const spreadAngles = this.getSpreadAngles(shotsToFire);
+
+          for (let i = 0; i < shotsToFire; i++) {
+            const bullet = this.bullets.get(
+              this.player.x + (this.playerSprite.flipX ? -60 : 60),
+              this.player.y + 20,
+              this.getBulletImageKey()
+            );
+
+            if (!bullet) continue;
+
+            bullet.setActive(true).setVisible(true);
+            const bulletSize = 18 * weaponSizeMultiplier;
+            bullet.setDisplaySize(bulletSize, bulletSize);
+            bullet.body.enable = true;
+            bullet.body.allowGravity = false;
+
+            // Flip bullet to match player direction
+            if (this.playerSprite.flipX) {
+              bullet.setFlipX(true);
+            }
+
+            // Mark bullet with upgrade properties
+            bullet.isPiercing = this.activeUpgrades.piercing;
+            bullet.isExplosive = this.activeUpgrades.explosive;
+            bullet.isCritical =
+              this.activeUpgrades.criticalShots && Math.random() < 0.25;
+
+            // Track which enemies this bullet has already hit
+            bullet.hitEnemies = new Set();
+
+            // Mark bullet with weapon-specific properties
+            bullet.weaponType = this.selectedWeapon;
+            bullet.isIceGun = this.selectedWeapon === "icegun";
+            bullet.isLaserGun = this.selectedWeapon === "lazergun";
+
+            // Apply spread for multishot
+            const angle = spreadAngles[i];
+            const velocityX = Math.cos(angle) * bulletSpeed * direction;
+            const velocityY = Math.sin(angle) * bulletSpeed;
+
+            bullet.setVelocity(velocityX, velocityY);
+
+            this.time.delayedCall(450, () => {
+              if (bullet.active) bullet.destroy();
+            });
+          }
+        }
+
+        getSpreadAngles(count) {
+          if (count === 1) return [0];
+          if (count === 2) return [-0.15, 0.15]; // ~8.5 degrees
+          if (count === 3) return [-0.2, 0, 0.2]; // ~11.5 degrees
+          return [0]; // fallback
+        }
+
+        getWeaponFireRate() {
+          // Return firing rate in milliseconds between shots
+          switch (this.selectedWeapon) {
+            case "pistol":
+              return 500; // 3.3 shots per second
+            case "icegun":
+              return 600; // 2.5 shots per second
+            case "lazergun":
+              return 700; // 4 shots per second
+            case "boxinggun":
+              return 500; // 2 shots per second (slower but bigger/faster bullets)
+            default:
+              return 600;
+          }
+        }
+
+        enemyShoot(enemy) {
+          // Safety check
+          if (!enemy || !enemy.active || !this.enemyBullets || !this.player) {
+            return;
+          }
+
+          // Create enemy bullet
+          const bullet = this.enemyBullets.get(enemy.x, enemy.y, "icebullet");
+
+          if (!bullet) return;
+
+          bullet.setActive(true).setVisible(true);
+          bullet.setDisplaySize(24, 24);
+
+          // Set bullet color based on enemy type
+          if (enemy.isFreezeRobot) {
+            bullet.setTint(0xccccff); // Cyan tint for freeze bullets
+            bullet.isFreezeBullet = true; // Mark as freeze bullet
+          } else {
+            bullet.setTint(0xff6600); // Orange tint for regular enemy bullets
+            bullet.isFreezeBullet = false;
+          }
+
+          bullet.body.enable = true;
+          bullet.body.allowGravity = false;
+
+          // Calculate direction towards player
+          const dx = this.player.x - enemy.x;
+          const dy = this.player.y - enemy.y;
+          const angle = Math.atan2(dy, dx);
+
+          // Set bullet velocity
+          const bulletSpeed = 150;
+          bullet.setVelocity(
+            Math.cos(angle) * bulletSpeed,
+            Math.sin(angle) * bulletSpeed
+          );
+
+          // Destroy bullet after 3 seconds
+          this.time.delayedCall(2000, () => {
+            if (bullet.active) bullet.destroy();
+          });
+        }
+
+        freezePlayer(duration) {
+          this.isFrozen = true;
+          this.freezeTimer = duration;
+
+          // Play freeze sound
+          if (!gameData.isMuted) {
+            this.sound.play("FreezeFx", { volume: 0.5 });
+          }
+
+          // Visual effect - tint player cyan
+          this.playerSprite.setTint(0xccccff);
+
+          // Screen shake
+          this.cameras.main.shake(100, 0.005);
+
+          // Particle effect
+          this.createParticleEffect(
+            this.player.x,
+            this.player.y,
+            "freeze",
+            0xccccff,
+            8
+          );
+
+          // Auto-unfreeze after duration
+          this.time.delayedCall(duration, () => {
+            this.isFrozen = false;
+            this.playerSprite.clearTint();
+          });
+        }
+
+        takeDamage(amount, enemyX, enemyY) {
+          const finalAmount = amount;
+
+          this.health -= finalAmount;
+          this.damageTaken += finalAmount; // Track damage for difficulty calculation
+
+          // Play hit sound with random pitch variation
+          if (!gameData.isMuted) {
+            const pitch = 0.7 + Math.random() * 0.3; // Random pitch between 0.7 and 1.0
+            this.sound.play("HitFx", {
+              volume: 0.8,
+              detune: (pitch - 1) * 1200,
+            });
+          }
+
+          // Reset blood rage stacks when hit
+          if (this.activeUpgrades.bloodRage > 0) {
+            this.bloodRageStacks = 0;
+            console.log("Blood rage stacks reset!");
+          }
+
+          this.updateUI();
+          this.updatePlayerHealthBar();
+
+          // Screen shake on damage
+          this.cameras.main.shake(200, 0.01);
+
+          // Particle effect on player damage
+          this.createParticleEffect(
+            this.player.x,
+            this.player.y,
+            "damage",
+            0xff0000,
+            8
+          );
+
+          // Visual feedback - apply tint to player sprite, not container
+          this.playerSprite.setTint(0xff0000);
+          this.time.delayedCall(200, () => {
+            this.playerSprite.clearTint();
+          });
+
+          // Smooth knockback player
+          const knockbackForce = 500;
+          const dx = this.player.x - enemyX;
+          const dy = this.player.y - enemyY;
+          const knockbackAngle = Math.atan2(dy, dx);
+
+          // Set initial knockback velocity
+          this.player.body.setVelocity(
+            Math.cos(knockbackAngle) * knockbackForce,
+            Math.sin(knockbackAngle) * knockbackForce
+          );
+
+          // Add knockback friction for smooth sliding
+          this.player.knockbackFriction = 0.85; // Friction multiplier per frame
+          this.player.isKnockbacked = true;
+
+          if (this.health <= 0) {
+            this.gameOver();
+          }
+        }
+
+        update(t, dt) {
+          // Safety check - don't update if game is not running or player is destroyed
+          if (
+            !this.gameRunning ||
+            !this.player ||
+            !this.player.active ||
+            !this.player.body
+          ) {
+            return;
+          }
+
+          // Adjust difficulty periodically
+          this.difficultyAdjustmentTimer += dt;
+          if (
+            this.difficultyAdjustmentTimer >= this.difficultyAdjustmentInterval
+          ) {
+            this.adjustDifficulty();
+            this.difficultyAdjustmentTimer = 0;
+          }
+
+          const speed = 150;
+
+          // Handle knockback friction
+          if (this.player.isKnockbacked) {
+            // Apply friction to knockback velocity
+            this.player.body.velocity.x *= this.player.knockbackFriction;
+            this.player.body.velocity.y *= this.player.knockbackFriction;
+
+            // Stop knockback when velocity is very low
+            if (
+              Math.abs(this.player.body.velocity.x) < 5 &&
+              Math.abs(this.player.body.velocity.y) < 5
+            ) {
+              this.player.isKnockbacked = false;
+              this.player.body.setVelocity(0);
+            }
+          } else {
+            // Normal movement only when not knockbacked
+            this.player.body.setVelocity(0);
+          }
+
+          // Phaser's collider handles all collision automatically
+
+          // Track if player is moving
+          let isMoving = false;
+          let moveX = 0;
+          let moveY = 0;
+
+          // Prioritize joystick when active; otherwise use keyboard (WASD/Arrows)
+          if (!this.isFrozen) {
+            const joystickActive = !!(
+              this.joystick &&
+              (this.joystick.isActive ||
+                (this.mobileInput &&
+                  (this.mobileInput.left ||
+                    this.mobileInput.right ||
+                    this.mobileInput.up ||
+                    this.mobileInput.down)))
+            );
+
+            if (joystickActive) {
+              // Mobile input (joystick)
+              if (this.mobileInput.left) moveX = -speed;
+              if (this.mobileInput.right) moveX = speed;
+              if (this.mobileInput.up) moveY = -speed;
+              if (this.mobileInput.down) moveY = speed;
+            } else {
+              // Keyboard input (desktop)
+              if (
+                (this.cursors.left && this.cursors.left.isDown) ||
+                (this.wasd && this.wasd.A && this.wasd.A.isDown)
+              ) {
+                moveX = -speed;
+              } else if (
+                (this.cursors.right && this.cursors.right.isDown) ||
+                (this.wasd && this.wasd.D && this.wasd.D.isDown)
+              ) {
+                moveX = speed;
+              }
+
+              if (
+                (this.cursors.up && this.cursors.up.isDown) ||
+                (this.wasd && this.wasd.W && this.wasd.W.isDown)
+              ) {
+                moveY = -speed;
+              } else if (
+                (this.cursors.down && this.cursors.down.isDown) ||
+                (this.wasd && this.wasd.S && this.wasd.S.isDown)
+              ) {
+                moveY = speed;
+              }
+            }
+          }
+
+          // Apply movement - Phaser's collider will handle collision automatically
+          if (moveX !== 0) {
+            this.player.body.setVelocityX(moveX);
+            isMoving = true;
+          }
+
+          if (moveY !== 0) {
+            // Only move up if not at top of lane
+            if (moveY < 0 && this.player.y > this.laneTop + 15) {
+              this.player.body.setVelocityY(moveY);
+              isMoving = true;
+            } else if (moveY > 0 && this.player.y < this.laneBottom - 15) {
+              this.player.body.setVelocityY(moveY);
+              isMoving = true;
+            }
+          }
+
+          // Handle player flipping and animation
+          if (this.player.body.velocity.x > 2) {
+            this.playerSprite.flipX = false;
+            this.playerGun.flipX = false;
+            this.playerGun.x = 25; // Gun on right side
+          } else if (this.player.body.velocity.x < -2) {
+            this.playerSprite.flipX = true;
+            this.playerGun.flipX = true;
+            this.playerGun.x = -25; // Gun on left side
+          }
+
+          // Switch between idle and walk animations
+          if (isMoving) {
+            if (
+              !this.playerSprite.anims.currentAnim ||
+              this.playerSprite.anims.currentAnim.key !== "playerWalk"
+            ) {
+              if (this.anims.exists("playerWalk")) {
+                this.playerSprite.play("playerWalk");
+              }
+            }
+          } else {
+            if (
+              !this.playerSprite.anims.currentAnim ||
+              this.playerSprite.anims.currentAnim.key !== "playerIdle"
+            ) {
+              if (this.anims.exists("playerIdle")) {
+                this.playerSprite.play("playerIdle");
+              }
+            }
+          }
+
+          // Handle weapon switching with spacebar (desktop only) + small cooldown to avoid rapid triggers
+          if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            if (!this.weaponSwitchCooldown) this.weaponSwitchCooldown = 0;
+            if (this.time.now - (this.lastWeaponSwitchTime || 0) > 250) {
+              if (
+                gameData.unlockedWeapons &&
+                gameData.unlockedWeapons.length > 1
+              ) {
+                try {
+                  this.switchWeapon();
+                  this.lastWeaponSwitchTime = this.time.now;
+                } catch (err) {
+                  console.error("Weapon switch error:", err);
+                  if (
+                    window.FarcadeSDK &&
+                    window.FarcadeSDK.singlePlayer?.actions?.reportError
+                  ) {
+                    window.FarcadeSDK.singlePlayer.actions.reportError({
+                      message: String(err),
+                      source: "weapon-switch",
+                    });
+                  }
+                }
+              }
+            }
+          }
+
+          // Handle shooting (auto for desktop, manual for mobile)
+          if (this.gameRunning) {
+            const currentTime = this.time.now;
+            const fireRate = this.getWeaponFireRate();
+
+            // Check if should shoot
+            let shouldShoot = false;
+            if (this.shootButton && this.shootButton.isPressed) {
+              // Mobile: shoot when button is pressed
+              shouldShoot = currentTime - this.lastShotTime >= fireRate;
+            } else if (this.autoShooting) {
+              // Desktop: auto-shoot
+              shouldShoot = currentTime - this.lastShotTime >= fireRate;
+            }
+
+            if (shouldShoot) {
+              this.shoot();
+              this.lastShotTime = currentTime;
+            }
+          }
+
+          // Update parallax scrolling
+          this.updateParallax(this.cameras.main.scrollX);
+
+          // Update bullets
+          this.bullets.children.iterate((bullet) => {
+            if (!bullet) return;
+          });
+
+          // Clamp player within horizontal world bounds (safety against knockback/push)
+          if (this.player.x < 0) {
+            this.player.x = 0;
+            this.player.body.setVelocityX(0);
+          } else if (this.player.x > this.worldWidth) {
+            this.player.x = this.worldWidth;
+            this.player.body.setVelocityX(0);
+          }
+
+          // Update player health bar position
+          this.updatePlayerHealthBar();
+
+          // Enemy AI and cleanup
+          this.enemies.children.iterate((enemy) => {
+            if (!enemy) return;
+
+            // Update enemy health bar position
+            this.updateEnemyHealthBar(enemy);
+
+            // Handle death animation movement
+            if (enemy.isDying) {
+              const deathProgress =
+                (this.time.now - enemy.deathStartTime) / 1200; // 24 frames at 20fps = 1.2 seconds
+              if (deathProgress < 1) {
+                // Move enemy backwards during death animation
+                const fallbackDistance = 10 * deathProgress; // 10px total fallback
+                enemy.x = enemy.deathStartX - fallbackDistance;
+              }
+
+              // Handle fade out after animation completes
+              if (enemy.isFading) {
+                const fadeProgress =
+                  (this.time.now - enemy.fadeStartTime) / 1000; // 1 second fade
+                if (fadeProgress < 1) {
+                  enemy.alpha = 1 - fadeProgress; // Fade from 1 to 0
+                } else {
+                  enemy.destroy(); // Destroy after fade completes
+                }
+              }
+
+              return; // Skip normal AI when dying
+            }
+
+            // Update attack cooldown
+            if (enemy.attackCooldown > 0) {
+              enemy.attackCooldown -= dt;
+            }
+
+            // Handle flying robot shooting
+            if (enemy.isFlying) {
+              enemy.shootCooldown -= dt;
+              if (enemy.shootCooldown <= 0) {
+                this.enemyShoot(enemy);
+                enemy.shootCooldown = enemy.shootDelay;
+              }
+            }
+
+            // Calculate distance to player
+            const dx = this.player.x - enemy.x;
+            const dy = this.player.y - enemy.y;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            // Check if enemy is in attack range and not on cooldown (skip for flying robots)
+            if (
+              !enemy.isFlying &&
+              distance <= enemy.attackRange &&
+              enemy.attackCooldown <= 0 &&
+              !enemy.isAttacking
+            ) {
+              // Start attack
+              enemy.isAttacking = true;
+              const attackAnim =
+                enemy.enemyType === "heavy" ? "enemy2Attack" : "enemyAttack";
+
+              // Force size BEFORE playing animation to prevent shrinking
+              const scaledStats = this.getScaledEnemyStats(enemy.enemyType);
+              enemy.setDisplaySize(scaledStats.size, scaledStats.size);
+              enemy.originalSize = scaledStats.size;
+              enemy.body.setOffset(100, 100);
+
+              enemy.play(attackAnim);
+              enemy.body.setVelocity(0); // Stop moving during attack
+
+              // Add frame update listener to maintain size during attack
+              /*  enemy.on("animationupdate", () => {
+                if (enemy.isAttacking && enemy.originalSize) {
+                  enemy.setDisplaySize(enemy.originalSize * 1.35, enemy.originalSize * 1.35);
+                }
+              }); */
+
+              // Set attack cooldown
+              enemy.attackCooldown = enemy.attackDelay;
+
+              // Return to walk animation after attack
+              enemy.on("animationcomplete", () => {
+                if (
+                  enemy.anims.currentAnim &&
+                  (enemy.anims.currentAnim.key === "enemyAttack" ||
+                    enemy.anims.currentAnim.key === "enemy2Attack")
+                ) {
+                  enemy.isAttacking = false;
+                  const walkAnim =
+                    enemy.enemyType === "heavy" ? "enemy2Walk" : "enemyWalk";
+                  enemy.play(walkAnim);
+                  enemy.body.setOffset(0, 0);
+
+                  // Force consistent display size when returning to walk
+                  if (enemy.originalSize) {
+                    enemy.setDisplaySize(
+                      enemy.originalSize,
+                      enemy.originalSize
+                    );
+                    enemy.body.setOffset(0, 0);
+                  }
+                }
+              });
+            }
+
+            // Check if enemy is in hit frames (11+) and can damage player
+            if (
+              enemy.isAttacking &&
+              enemy.anims.currentAnim &&
+              (enemy.anims.currentAnim.key === "enemyAttack" ||
+                enemy.anims.currentAnim.key === "enemy2Attack") &&
+              enemy.anims.currentFrame &&
+              enemy.anims.currentFrame.index >= 11 &&
+              distance <= enemy.attackRange &&
+              distance >= 30 && // Simple minimum distance
+              !enemy.hasHitPlayer
+            ) {
+              // Mark that this enemy has hit the player this attack
+              enemy.hasHitPlayer = true;
+
+              // Deal damage to player
+              this.takeDamage(1, enemy.x, enemy.y);
+            }
+
+            // Reset hit flag when attack animation ends or before hit frames
+            if (
+              enemy.isAttacking &&
+              enemy.anims.currentAnim &&
+              enemy.anims.currentAnim.key === "enemyAttack" &&
+              enemy.anims.currentFrame &&
+              enemy.anims.currentFrame.index < 9
+            ) {
+              enemy.hasHitPlayer = false;
+            } else if (!enemy.isAttacking) {
+              // Handle different movement patterns
+              if (enemy.isFlying) {
+                // Flying robot movement - straight lines across the lane
+                enemy.directionChangeTimer += dt;
+
+                // Change direction periodically
+                if (enemy.directionChangeTimer >= enemy.directionChangeDelay) {
+                  enemy.currentDirection *= -1; // Reverse direction
+                  enemy.directionChangeTimer = 0;
+                }
+
+                // Move in straight line (horizontal movement)
+                let velocityX = enemy.currentDirection * enemy.speed;
+                let velocityY = 0;
+
+                // Slight vertical drift to stay in lane
+                if (enemy.y < this.laneTop + 100) {
+                  velocityY = enemy.speed * 0.3; // Drift down
+                } else if (enemy.y > this.laneBottom - 100) {
+                  velocityY = -enemy.speed * 0.3; // Drift up
+                }
+
+                enemy.body.setVelocity(velocityX, velocityY);
+              } else {
+                // Regular enemy movement - move towards player
+                const angle = Math.atan2(dy, dx);
+                let velocityX = Math.cos(angle) * enemy.speed;
+                let velocityY = Math.sin(angle) * enemy.speed;
+
+                // Constrain enemy movement to lane boundaries
+                const futureY = enemy.y + velocityY;
+                if (futureY < this.laneTop + 80) {
+                  velocityY = 0; // Stop moving up if at top of lane
+                } else if (futureY > this.laneBottom - 80) {
+                  velocityY = 0; // Stop moving down if at bottom of lane
+                }
+
+                enemy.body.setVelocity(velocityX, velocityY);
+              }
+            }
+
+            // Handle enemy flipping based on movement direction
+            if (enemy.body.velocity.x > 2) {
+              enemy.flipX = true; // Moving right
+            } else if (enemy.body.velocity.x < -2) {
+              enemy.flipX = false; // Moving left
+            }
+
+            // Set depth for enemies (but not parallax layers)
+            if (enemy.depth < 20000) {
+              enemy.setDepth(enemy.y);
+            }
+
+            // Ensure enemies stay within lane bounds
+            if (enemy.y < this.laneTop + 50) {
+              enemy.y = this.laneTop + 50;
+              enemy.body.setVelocityY(0);
+            } else if (enemy.y > this.laneBottom - 50) {
+              enemy.y = this.laneBottom - 50;
+              enemy.body.setVelocityY(0);
+            }
+          });
+
+          // Ensure player stays within lane bounds (even during knockback)
+          if (this.player.y < this.laneTop + 15) {
+            this.player.y = this.laneTop + 15;
+            this.player.body.setVelocityY(0);
+          } else if (this.player.y > this.laneBottom - 15) {
+            this.player.y = this.laneBottom - 15;
+            this.player.body.setVelocityY(0);
+          }
+
+          this.player.setDepth(this.player.y);
+        }
+
+        updateParallax(cameraX) {
+          // Update tileSprite tile positions for parallax scrolling
+          this.parallax1.tilePositionX = cameraX * 0.3;
+          this.parallax2.tilePositionX = cameraX * 0.6;
+          this.parallaxBottom1.tilePositionX = cameraX * 0.4;
+          this.parallaxBottom2.tilePositionX = cameraX * 0.7;
+
+          // Prevent bottom parallax from duplicating by limiting tile scale
+          this.parallaxBottom1.tileScaleX = 1;
+          this.parallaxBottom2.tileScaleX = 1;
+        }
+
+        updateUI() {
+          // Display combined score (current game + previous total)
+          const displayScore = this.score + (gameData.totalScore || 0);
+          console.log(
+            `updateUI called - this.score: ${
+              this.score
+            }, gameData.totalScore: ${
+              gameData.totalScore || 0
+            }, displayScore: ${displayScore}`
+          ); // Debug log
+
+          // Update Phaser text elements
+          if (this.scoreText) {
+            this.scoreText.setText(`Score: ${displayScore}`);
+          }
+          if (this.waveText) {
+            this.waveText.setText(`Wave: ${this.currentWave}`);
+          }
+        }
+
+        completeWave() {
+          if (this.waveTransitioning) return; // Prevent multiple calls
+
+          this.waveTransitioning = true;
+          this.gameRunning = false;
+
+          // Play success music
+          this.playSuccessMusic();
+
+          // Calculate performance-based bonuses (no time-based scoring)
+          const accuracy =
+            this.shotsFired > 0 ? this.shotsHit / this.shotsFired : 1;
+          const accuracyBonus = accuracy * 100; // Accuracy bonus
+          const comboBonus = this.maxCombo * 20; // Combo bonus
+          const noDamageBonus = this.damageTaken === 0 ? 200 : 0; // No damage bonus
+
+          // Add all bonuses to score
+          const performanceBonus = accuracyBonus + comboBonus + noDamageBonus;
+          this.score += 25 * this.currentWave + Math.floor(performanceBonus);
+
+          // Update UI to show final score
+          this.updateUI();
+
+          console.log(
+            `Wave completed! Performance bonus: ${Math.floor(
+              performanceBonus
+            )} (Accuracy: ${accuracyBonus}, Combo: ${comboBonus}, No Damage: ${noDamageBonus})`
+          );
+
+          // Check what will be unlocked before actually unlocking
+          const newlyUnlockedWeapons = this.checkNewUnlocks();
+
+          // Now actually unlock the weapons
+          this.unlockWeaponsBasedOnPerformance();
+
+          // Update weapon switch button after unlocking weapons
+          this.updateWeaponSwitchButton();
+
+          // Unlock next wave
+          const nextWave = this.currentWave + 1;
+          if (nextWave > gameData.highestWave) {
+            gameData.saveHighestWave(nextWave);
+          }
+
+          // Save progress
+          gameData.saveTotalScore(this.score);
+
+          // Show completion screen with automatic progression
+          this.showWaveCompletion(newlyUnlockedWeapons, nextWave);
+        }
+
+        checkNewUnlocks() {
+          const newlyUnlockedWeapons = [];
+
+          // Check each unlock condition
+          if (
+            this.currentWave >= 1 &&
+            !gameData.unlockedWeapons.includes("icegun")
+          ) {
+            newlyUnlockedWeapons.push("icegun");
+          }
+          if (
+            this.currentWave >= 2 &&
+            !gameData.unlockedWeapons.includes("lazergun")
+          ) {
+            newlyUnlockedWeapons.push("lazergun");
+          }
+          if (
+            this.currentWave >= 3 &&
+            !gameData.unlockedWeapons.includes("boxinggun")
+          ) {
+            newlyUnlockedWeapons.push("boxinggun");
+          }
+
+          return newlyUnlockedWeapons;
+        }
+
+        unlockWeaponsBasedOnPerformance() {
+          // Unlock weapons based on wave reached
+          if (this.currentWave >= 1) {
+            gameData.unlockWeapon("icegun");
+          }
+          if (this.currentWave >= 2) {
+            gameData.unlockWeapon("lazergun");
+          }
+          if (this.currentWave >= 3) {
+            gameData.unlockWeapon("boxinggun");
+          }
+        }
+
+        updateWeaponSwitchButton() {
+          // Only update if button exists and multiple weapons are unlocked
+          if (!this.weaponSwitchButton || gameData.unlockedWeapons.length <= 1)
+            return;
+
+          // Update current weapon index
+          this.weaponSwitchButton.currentWeaponIndex =
+            gameData.unlockedWeapons.indexOf(this.selectedWeapon);
+          if (this.weaponSwitchButton.currentWeaponIndex === -1) {
+            this.weaponSwitchButton.currentWeaponIndex = 0;
+            this.selectedWeapon = gameData.unlockedWeapons[0];
+          }
+
+          // Update button icon
+          this.weaponSwitchButton.text.setText(
+            this.getWeaponIcon(this.selectedWeapon)
+          );
+        }
+
+        showWaveCompletion(newlyUnlockedWeapons, nextWave) {
+          // Hide player container instead of destroying to avoid update errors
+          if (this.player && this.player.active) {
+            this.player.setVisible(false);
+            this.player.body.enable = false;
+          }
+
+          // Create expanding blue circle
+          const expandingCircle = this.add.circle(
+            this.player.x,
+            this.player.y,
+            1,
+            0x00142d,
+            1
+          );
+          expandingCircle.setDepth(20000);
+
+          // Animate circle expansion
+          this.tweens.add({
+            targets: expandingCircle,
+            radius:
+              Math.max(
+                this.sys.game.config.width,
+                this.sys.game.config.height
+              ) * 1.6,
+            duration: 600,
+            ease: "Power2.easeOut",
+            onComplete: () => {
+              // Show winning animation or weapon unlock first
+              if (newlyUnlockedWeapons && newlyUnlockedWeapons.length > 0) {
+                this.showNewWeaponUnlock(newlyUnlockedWeapons, nextWave);
+              } else {
+                this.showWinnerAnimation(nextWave);
+              }
+            },
+          });
+        }
+
+        showPerformanceCard(newlyUnlockedWeapons, nextWave) {
+          // Define all possible upgrades
+          const allUpgrades = [
+            {
+              id: "multishot",
+              name: "MULTISHOT",
+              description: "Fire 2 bullets at once",
+              max: 2,
+              icon: "🔫",
+            },
+            {
+              id: "piercing",
+              name: "PIERCING BULLETS",
+              description: "Bullets pass through enemies",
+              max: 1,
+              icon: "➡️",
+            },
+            {
+              id: "explosive",
+              name: "EXPLOSIVE ROUNDS",
+              description: "Bullets explode on impact",
+              max: 1,
+              icon: "💥",
+            },
+            {
+              id: "bulletSpeed",
+              name: "BULLET SPEED",
+              description: "Bullets travel 50% faster",
+              max: 1,
+              icon: "⚡",
+            },
+            {
+              id: "criticalShots",
+              name: "CRITICAL SHOTS",
+              description: "25% chance for 2x damage",
+              max: 1,
+              icon: "⭐",
+            },
+            {
+              id: "comboMaster",
+              name: "COMBO MASTER",
+              description: "Extend combo window to 4s",
+              max: 1,
+              icon: "🔥",
+            },
+            {
+              id: "scoreMultiplier",
+              name: "SCORE MULTIPLIER",
+              description: "Earn 50% more points",
+              max: 2,
+              icon: "💰",
+            },
+            {
+              id: "freezeBlast",
+              name: "FREEZE BLAST",
+              description: "Every 5 kills freeze all enemies",
+              max: 1,
+              icon: "❄️",
+            },
+            {
+              id: "executioner",
+              name: "EXECUTIONER",
+              description: "3x damage to low health enemies",
+              max: 1,
+              icon: "⚔️",
+            },
+            {
+              id: "bloodRage",
+              name: "BLOOD RAGE",
+              description: "Each kill increases damage by 2%",
+              max: 1,
+              icon: "🩸",
+            },
+            {
+              id: "heal",
+              name: "HEAL",
+              description: "Restore 50% health instantly",
+              max: 1,
+              icon: "❤️",
+            },
+          ];
+
+          // Filter out maxed upgrades and apply rarity rules
+          const availableUpgrades = allUpgrades.filter((upgrade) => {
+            const currentLevel = this.activeUpgrades[upgrade.id];
+            const isMaxed =
+              typeof currentLevel === "boolean"
+                ? currentLevel
+                : currentLevel >= upgrade.max;
+
+            // Skip if maxed
+            if (isMaxed) return false;
+
+            // Special rarity rule for heal upgrade (25% chance)
+            if (upgrade.id === "heal") {
+              return Math.random() < 0.25; // 25% chance to appear
+            }
+
+            // All other upgrades appear normally
+            return true;
+          });
+
+          // If no upgrades available, skip upgrade screen and continue
+          if (availableUpgrades.length === 0) {
+            console.log("All upgrades maxed out! Continuing to next wave...");
+
+            // Auto-equip newly unlocked weapon if any
+            if (newlyUnlockedWeapons && newlyUnlockedWeapons.length > 0) {
+              this.selectedWeapon = newlyUnlockedWeapons[0];
+              gameData.saveCurrentWeapon(this.selectedWeapon);
+            }
+
+            // Show brief "All Upgrades Maxed!" message
+            const maxedText = this.add
+              .text(200, 300, "ALL UPGRADES MAXED!", {
+                fontFamily: "Fobble",
+                fontSize: "36px",
+                fill: "#ffd700",
+                stroke: "#000000",
+                strokeThickness: 4,
+                align: "center",
+              })
+              .setOrigin(0.5)
+              .setDepth(131000)
+              .setScrollFactor(0);
+
+            this.tweens.add({
+              targets: maxedText,
+              scale: 1.2,
+              duration: 500,
+              yoyo: true,
+              ease: "Power2.easeInOut",
+            });
+
+            // Continue to next wave after brief delay
+            this.time.delayedCall(1500, () => {
+              this.startNextWave(nextWave);
+            });
+            return;
+          }
+
+          // Select 3 random upgrades (or less if fewer available)
+          const selectedUpgrades = this.getRandomUpgrades(availableUpgrades, 3);
+
+          // Title
+          const title = this.add
+            .text(200, 95, "CHOOSE UPGRADE", {
+              fontFamily: "Fobble",
+              fontSize: "42px",
+              fill: "#ffd700",
+              stroke: "#000000",
+              strokeThickness: 4,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setDepth(131000)
+            .setScrollFactor(0);
+
+          // Create upgrade cards (stacked vertically)
+          const cardWidth = 300;
+          const cardHeight = 100;
+          const startX = 200;
+          const spacing = 110;
+          const startY = 160 - ((selectedUpgrades.length - 1) * spacing) / 2;
+
+          selectedUpgrades.forEach((upgrade, index) => {
+            const y = startY + 130 + index * spacing;
+
+            // Card background with rounded corners
+            const card = this.add.graphics();
+            card.setDepth(131000);
+            card.setScrollFactor(0);
+            card.setInteractive();
+
+            // Draw rounded rectangle
+            card.fillStyle(0x2a2a4a, 0.9);
+            card.lineStyle(3, 0xffd700);
+            card.fillRoundedRect(
+              startX - cardWidth / 2,
+              y - cardHeight / 2,
+              cardWidth,
+              cardHeight,
+              15 // Corner radius
+            );
+            card.strokeRoundedRect(
+              startX - cardWidth / 2,
+              y - cardHeight / 2,
+              cardWidth,
+              cardHeight,
+              15 // Corner radius
+            );
+
+            // Set the hit area for the graphics object
+            card.setInteractive(
+              new Phaser.Geom.Rectangle(
+                startX - cardWidth / 2,
+                y - cardHeight / 2,
+                cardWidth,
+                cardHeight
+              ),
+              Phaser.Geom.Rectangle.Contains
+            );
+
+            // Icon
+            const icon = this.add
+              .text(startX - 110, y, upgrade.icon, {
+                fontSize: "42px",
+              })
+              .setOrigin(0.5)
+              .setDepth(131001)
+              .setScrollFactor(0);
+
+            // Name
+            const nameText = this.add
+              .text(startX - 60, y - 15, upgrade.name, {
+                fontFamily: "Fobble",
+                fontSize: "36px",
+                fill: "#ffffff",
+                align: "left",
+                wordWrap: { width: 200 },
+              })
+              .setOrigin(0, 0.5)
+              .setDepth(131001)
+              .setScrollFactor(0);
+
+            // Description
+            const descText = this.add
+              .text(startX - 60, y + 20, upgrade.description, {
+                fontFamily: "Menco",
+                fontSize: "16px",
+                fill: "#aaaaaa",
+                align: "left",
+                wordWrap: { width: 200 },
+              })
+              .setOrigin(0, 0.5)
+              .setDepth(131001)
+              .setScrollFactor(0);
+
+            // Hover effect
+            card.on("pointerover", () => {
+              // Clear and redraw with brighter color
+              card.clear();
+              card.fillStyle(0x3a3a5a, 1);
+              card.lineStyle(3, 0xffd700);
+              card.fillRoundedRect(
+                startX - cardWidth / 2,
+                y - cardHeight / 2,
+                cardWidth,
+                cardHeight,
+                15
+              );
+              card.strokeRoundedRect(
+                startX - cardWidth / 2,
+                y - cardHeight / 2,
+                cardWidth,
+                cardHeight,
+                15
+              );
+            });
+
+            card.on("pointerout", () => {
+              // Clear and redraw with original color
+              card.clear();
+              card.fillStyle(0x2a2a4a, 0.9);
+              card.lineStyle(3, 0xffd700);
+              card.fillRoundedRect(
+                startX - cardWidth / 2,
+                y - cardHeight / 2,
+                cardWidth,
+                cardHeight,
+                15
+              );
+              card.strokeRoundedRect(
+                startX - cardWidth / 2,
+                y - cardHeight / 2,
+                cardWidth,
+                cardHeight,
+                15
+              );
+            });
+
+            // Click to select upgrade
+            card.on("pointerdown", () => {
+              // Play click sound
+              if (!gameData.isMuted) {
+                this.sound.play("ClickFx", { volume: 0.3 });
+              }
+              this.selectUpgrade(upgrade, newlyUnlockedWeapons, nextWave);
+            });
+          });
+        }
+
+        getRandomUpgrades(upgrades, count) {
+          const shuffled = [...upgrades].sort(() => Math.random() - 0.5);
+          return shuffled.slice(0, Math.min(count, upgrades.length));
+        }
+
+        selectUpgrade(upgrade, newlyUnlockedWeapons, nextWave) {
+          // Apply the upgrade
+          if (typeof this.activeUpgrades[upgrade.id] === "boolean") {
+            this.activeUpgrades[upgrade.id] = true;
+          } else {
+            this.activeUpgrades[upgrade.id]++;
+          }
+
+          // Special handling for heal upgrade
+          if (upgrade.id === "heal") {
+            const healAmount = Math.ceil(10 * 0.5); // 50% of max health (10)
+            this.health = Math.min(10, this.health + healAmount);
+            this.updatePlayerHealthBar();
+            console.log(
+              `Healed for ${healAmount} health! Current health: ${this.health}`
+            );
+          }
+
+          console.log(`Upgrade selected: ${upgrade.name}`, this.activeUpgrades);
+
+          // Auto-equip newly unlocked weapon if any
+          if (newlyUnlockedWeapons && newlyUnlockedWeapons.length > 0) {
+            this.selectedWeapon = newlyUnlockedWeapons[0];
+            gameData.saveCurrentWeapon(this.selectedWeapon);
+          }
+
+          // Stop success music after upgrade selection
+          if (this.successMusic) {
+            this.successMusic.stop();
+            this.successMusic = null;
+          }
+
+          // Proceed to next wave
+          this.startNextWave(nextWave);
+        }
+
+        showNewWeaponUnlock(newlyUnlockedWeapons, nextWave) {
+          // Get the first newly unlocked weapon
+          const newWeaponId = newlyUnlockedWeapons[0];
+          const weaponNames = {
+            icegun: "ICE GUN",
+            lazergun: "LASER GUN",
+            boxinggun: "BOXING GUN",
+          };
+
+          // Create "NEW WEAPON UNLOCKED!" text
+          const unlockText = this.add
+            .text(200, 200, "NEW WEAPON UNLOCKED!", {
+              fontFamily: "Fobble",
+              fontSize: "32px",
+              fill: "#ffd700",
+              stroke: "#000000",
+              strokeThickness: 4,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setDepth(125000)
+            .setScrollFactor(0);
+
+          // Create weapon sprite display
+          const weaponSprite = this.add
+            .sprite(200, 275, newWeaponId)
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setDepth(125000)
+            .setScrollFactor(0);
+
+          // Create weapon name text
+          const weaponNameText = this.add
+            .text(200, 350, weaponNames[newWeaponId] || "NEW WEAPON", {
+              fontFamily: "Fobble",
+              fontSize: "24px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setDepth(125000)
+            .setScrollFactor(0);
+
+          // Animate text and weapon entrance
+          this.tweens.add({
+            targets: [unlockText, weaponSprite, weaponNameText],
+            scale: 1,
+            alpha: 1,
+            duration: 600,
+            delay: 200,
+            ease: "Back.easeOut",
+          });
+
+          // Show completion card after animation
+          this.time.delayedCall(2000, () => {
+            this.tweens.add({
+              targets: [unlockText, weaponSprite, weaponNameText],
+
+              alpha: 0,
+              duration: 400,
+              ease: "Back.easeOut",
+            });
+            this.time.delayedCall(300, () => {
+              this.showPerformanceCard(newlyUnlockedWeapons, nextWave);
+            });
+          });
+        }
+
+        showWinnerAnimation(nextWave) {
+          // Winner animation in the center
+          const winner = this.add
+            .sprite(200, 250, "winner")
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setDepth(120000)
+            .setScrollFactor(0);
+
+          // Animate winner sprite with dramatic entrance
+          this.tweens.add({
+            targets: winner,
+            scale: 1.2,
+            alpha: 1,
+            duration: 800,
+            ease: "Back.easeOut",
+            onComplete: () => {
+              winner.play("win");
+
+              // Scale down to normal size
+              this.tweens.add({
+                targets: winner,
+                scale: 1.0,
+                duration: 300,
+                ease: "Power2.easeOut",
+              });
+
+              // Show completion card after winner animation
+              this.time.delayedCall(1500, () => {
+                this.tweens.add({
+                  targets: winner,
+                  alpha: 0,
+                  duration: 300,
+                  ease: "Power2.easeOut",
+                });
+                this.time.delayedCall(300, () => {
+                  this.showPerformanceCard([], nextWave);
+                });
+              });
+            },
+          });
+        }
+
+        startNextWave(nextWave) {
+          // Reset wave transition state
+          this.waveTransitioning = false;
+
+          // Play start wave sound
+          if (!gameData.isMuted) {
+            this.sound.play("StartGameFx", { volume: 0.4 });
+          }
+
+          // Fade out and start next wave
+          this.cameras.main.fadeOut(500);
+          this.time.delayedCall(500, () => {
+            this.scene.start("GameScene", {
+              selectedWeapon: this.selectedWeapon,
+              selectedWave: nextWave,
+              isNewGame: false,
+              activeUpgrades: this.activeUpgrades, // Pass upgrades to next wave
+            });
+          });
+        }
+
+        destroy() {
+          // Stop all music
+          this.stopGameplayMusic();
+          if (this.successMusic) {
+            this.successMusic.stop();
+            this.successMusic = null;
+          }
+
+          // Clean up mobile controls to prevent touch blocking
+          if (this.joystick) {
+            if (this.joystick.base) {
+              this.joystick.base.destroy();
+            }
+            if (this.joystick.knob) {
+              this.joystick.knob.destroy();
+            }
+            this.joystick = null;
+          }
+
+          if (this.weaponSwitchButton) {
+            if (this.weaponSwitchButton.button) {
+              this.weaponSwitchButton.button.destroy();
+            }
+            if (this.weaponSwitchButton.text) {
+              this.weaponSwitchButton.text.destroy();
+            }
+            this.weaponSwitchButton = null;
+          }
+
+          // Call parent destroy method
+          super.destroy();
+        }
+
+        gameOver() {
+          this.gameRunning = false;
+
+          // Stop all music
+          this.stopGameplayMusic();
+          if (this.successMusic) {
+            this.successMusic.stop();
+            this.successMusic = null;
+          }
+
+          // Reset upgrades on game over
+          this.activeUpgrades = {
+            multishot: 0,
+            piercing: false,
+            explosive: false,
+            bulletSpeed: 0,
+            criticalShots: false,
+            comboMaster: false,
+            scoreMultiplier: 0,
+            freezeBlast: false,
+            executioner: false,
+            bloodRage: 0,
+            heal: false,
+          };
+
+          // Calculate final score (current game + previous total)
+          const finalScore = this.score + (gameData.totalScore || 0);
+
+          // Reset total score to 0 on game over (like previous game)
+          gameData.resetTotalScore();
+          gameData.saveHighestWave(this.currentWave);
+
+          // Submit final score to leaderboard
+          window.FarcadeSDK.singlePlayer.actions.gameOver({
+            score: finalScore,
+          });
+
+          this.scene.start("HubScene");
+        }
+      }
+
+      // Game configuration
+      const config = {
+        type: Phaser.AUTO,
+        width: 400,
+        height: 600,
+        parent: "game-container",
+        backgroundColor: "#000000",
+        physics: {
+          default: "arcade",
+          arcade: {
+            gravity: { y: 0 },
+            debug: false,
+          },
+        },
+        pixelArt: false,
+        render: { roundPixels: false },
+        scene: [BootLoader, HubScene, GameScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH,
+        },
+      };
+
+      // Start the game
+      const game = new Phaser.Game(config);
+
+      // Global game state guard
+      let GAME_STATE = "hub"; // 'hub' | 'playing' | 'gameover'
+
+      // Robust reset for mobile/desktop replay and SDK play_again
+      function resetGame() {
+        GAME_STATE = "hub";
+        try {
+          // Stop any active scenes
+          if (game.scene.isActive("GameScene")) game.scene.stop("GameScene");
+          if (game.scene.isActive("HubScene")) game.scene.stop("HubScene");
+          if (game.scene.isActive("BootLoader")) game.scene.stop("BootLoader");
+        } catch (e) {}
+
+        // Restart cleanly at hub
+        game.scene.start("HubScene");
+        try {
+          if (game.input && game.input.keyboard)
+            game.input.keyboard.enabled = true;
+        } catch (e) {}
+      }
+
+      // Initialize game data when SDK is ready
+      window.FarcadeSDK.singlePlayer.actions.ready().then((gameInfo) => {
+        if (gameInfo && gameInfo.initialGameState) {
+          gameData.initialize(gameInfo.initialGameState.gameState);
+        } else {
+          gameData.initialize();
+        }
+      });
+
+      // Farcade SDK event handlers
+      window.FarcadeSDK.on("play_again", () => {
+        resetGame();
+      });
+
+      window.FarcadeSDK.on("toggle_mute", ({ isMuted }) => {
+        gameData.isMuted = isMuted;
+      });
+    </script>
+  </body>
+</html>

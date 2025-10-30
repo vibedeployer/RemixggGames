@@ -1,0 +1,4218 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Penguin Battle Royale</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Fobble";
+        src: url("https://artificialisle.github.io/font/Fobble_regular-Regular%20(1)%20(1).otf")
+          format("opentype");
+      }
+    </style>
+    <style>
+      @font-face {
+        font-family: "Menco";
+        src: url("https://artificialisle.github.io/font/Kvant%20-%20Menco-Medium%20(2).otf")
+          format("opentype");
+      }
+    </style>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="" rel="stylesheet" />
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+
+        font-family: "Fobble", Arial, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+      }
+      #game-container {
+        position: relative;
+        aspect-ratio: 2 / 3;
+        max-width: 500px;
+      }
+      .ui-overlay {
+        position: absolute;
+        top: 25px;
+        left: 0;
+        right: 0;
+        color: white;
+        font-size: 38px;
+        font-weight: bold;
+
+        z-index: 100;
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+      }
+      .score-container {
+        position: absolute;
+        top: 0;
+        left: 25px;
+        -webkit-text-stroke: 0.5px black;
+      }
+      .level-container {
+        position: absolute;
+        top: 0;
+        right: 25px;
+        -webkit-text-stroke: 0.5px black;
+      }
+      .controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        text-align: center;
+        font-size: 12px;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@0.2.1/dist/index.min.js"></script>
+  </head>
+  <body>
+    <div id="game-container">
+      <div class="ui-overlay" id="ui-overlay" style="display: none">
+        <div class="score-container">Score: <span id="score">0</span></div>
+        <div class="level-container">Level: <span id="level">1</span></div>
+      </div>
+    </div>
+
+    <script>
+      // Game data management using Farcade SDK
+      class GameData {
+        constructor() {
+          this.unlockedCharacters = ["classic"];
+          this.currentCharacter = "classic";
+          this.highestLevel = 1;
+          this.totalScore = 0;
+          this.isMuted = false;
+          this.initialized = false;
+        }
+
+        async initialize(initialGameState) {
+          if (initialGameState) {
+            this.unlockedCharacters = initialGameState.unlockedCharacters || [
+              "classic",
+            ];
+            this.currentCharacter =
+              initialGameState.currentCharacter || "classic";
+            this.highestLevel = initialGameState.highestLevel || 1;
+            this.totalScore = initialGameState.totalScore || 0;
+          }
+          this.initialized = true;
+        }
+
+        getGameState() {
+          return {
+            unlockedCharacters: this.unlockedCharacters,
+            currentCharacter: this.currentCharacter,
+            highestLevel: this.highestLevel,
+            totalScore: this.totalScore,
+            isMuted: this.isMuted,
+          };
+        }
+
+        setGameState(gameState) {
+          if (gameState) {
+            this.unlockedCharacters = gameState.unlockedCharacters || [
+              "classic",
+            ];
+            this.currentCharacter = gameState.currentCharacter || "classic";
+            this.highestLevel = gameState.highestLevel || 1;
+            this.totalScore = gameState.totalScore || 0;
+          }
+        }
+
+        saveCurrentCharacter(character) {
+          this.currentCharacter = character;
+          this.saveGameState();
+        }
+
+        saveHighestLevel(level) {
+          if (level > this.highestLevel) {
+            this.highestLevel = level;
+            this.saveGameState();
+          }
+        }
+
+        saveTotalScore(score) {
+          this.totalScore += score;
+          this.saveGameState();
+        }
+
+        resetTotalScore() {
+          this.totalScore = 0;
+          this.saveGameState();
+        }
+
+        unlockCharacter(character) {
+          if (!this.unlockedCharacters.includes(character)) {
+            this.unlockedCharacters.push(character);
+            this.saveGameState();
+          }
+        }
+
+        saveGameState() {
+          if (this.initialized && window.FarcadeSDK) {
+            window.FarcadeSDK.singlePlayer.actions.saveGameState({
+              gameState: this.getGameState(),
+            });
+          }
+        }
+
+        toggleMute() {
+          this.isMuted = !this.isMuted;
+          this.saveGameState();
+          return this.isMuted;
+        }
+      }
+
+      // Global game data instance
+      const gameData = new GameData();
+
+      // Helper function to play sounds with mute checking
+      function playSound(scene, soundKey, options = {}) {
+        if (!gameData.isMuted && scene && scene.sound) {
+          scene.sound.play(soundKey, options);
+        }
+      }
+
+      class BootLoader extends Phaser.Scene {
+        constructor() {
+          super({ key: "BootLoader" });
+        }
+
+        preload() {
+          this.loadFontPromise = document.fonts.load('16px "Fobble"');
+          this.loadFontPromise = document.fonts.load('16px "Menco"');
+          // Create loading bar
+          this.createLoadingBar();
+
+          // Load all essential assets
+          this.load.spritesheet(
+            "pudgyPenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/All%20Characters-Character02-Walk_00-sheet-2gBZY6agvwcxyVW3JSV9Pee7RuOpkh.png?sWve",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "pudgyPenguinRoll",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/All%20Characters-Character02-Roll_0-sheet-xeq5ndaFTWcv9sA9qOb7G9zsR3GWKO.png?5io4",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "piratePenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/All%20Characters-Character01-Walk_00-sheet-o2ZqUSwXHiDT2kJr3tzcacugrTb0ku.png?f4Gs",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "piratePenguinRoll",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/All%20Characters-Character01-Roll_0-sheet-xHtA6HQyPjEvwXpPH3iMD2wdaCpiHJ.png?NgpR",
+            { frameWidth: 128, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "ninjaPenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/ninjawalk-K2dpm9xU28lGQR01ILfPmb7cFi2VKq.png?Urt2",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "ninjaPenguinRoll",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/ninjaroll-3ZDnHU0yzR6lgrvky656yPSM2nNyI5.png?vNHh",
+            { frameWidth: 128, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "aviatorPenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/aviatorwalk-y6tshS3osmGoDUfymjL948Mf5Fg1Ci.png?GInW",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "aviatorPenguinRoll",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/aviatorroll-8du6sgMfDPNjq9wOebgKbWRgyw2ix9.png?hXSD",
+            { frameWidth: 128, frameHeight: 160 }
+          );
+
+          this.load.spritesheet(
+            "vikingPenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/vikingwalk-VgLNuILiu3YZjhVYZCzfDAH0QaWuYl.png?fDG8",
+            { frameWidth: 128, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "vikingPenguinRoll",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/vikingroll-OUtDp6RyscaqTDFjYkiuKzySHFkqFF.png?lclp",
+            { frameWidth: 128, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "winner",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/giphy%20%283%29-7NPgCuEduO6YXBe9UEkJIUxdYqx5ye.png?X9I0",
+            { frameWidth: 250, frameHeight: 250 }
+          );
+
+          this.load.image(
+            "levelSelectCard",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/level%20select-export-Gn9pqh5s8PLtUuYiWNNKPc4La4tqLU.png?cM0r"
+          );
+
+          // Load background layer assets
+          this.load.image(
+            "sky",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/New%20Project%20%282%29-5QjWuyDkdPDljfldyzpw8pkj8kPvuA.png?AziT"
+          );
+
+          this.load.image(
+            "clouds",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/layer6-l8aFl8Xa4hoV8GGDdz06AGyPMLxhvb.png?iuXo"
+          );
+
+          this.load.image(
+            "fishgreen",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/FISH_GRN-01-atxf82EBLSaIEKGvyKQrja0VhQ3oBe.png?RjC9"
+          );
+
+          this.load.image(
+            "fishred",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/FISH-ORANGE-01-OS2HBzCcmUxppy5s1LNGYqMLdc1vi8.png?kwpb"
+          );
+
+          this.load.image(
+            "fishblue",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/FISH-BLU_DARK-01-RubJoh4zBi5TVoscJNbkBZxhnXslqs.png?Rj3R"
+          );
+
+          this.load.audio(
+            "HudMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/HUB-mXTbNUbqzb5gWRXQixhoJCx3gCNskw.mp3?Jf4N"
+          );
+          this.load.audio(
+            "PirateMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/PIRATE-OVga5qNDf0jFU0ll98KRRoRe7WCnaz.mp3?wVdy"
+          );
+          this.load.audio(
+            "AviatorMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/BETTERAIR-UDhYiKzLM0maCu1tAGfyIpJ8HwVkxf.mp3?JMKC"
+          );
+          this.load.audio(
+            "VikingMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/VIKING-e3dIhSnwhHU4R2lLQ0hCPJdvkG0O9O.mp3?kq69"
+          );
+          this.load.audio(
+            "NinjaMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/NINJA-6yzBt9iHupcThX2dsq0bFyUbhWC36M.mp3?vQpG"
+          );
+          this.load.audio(
+            "VictoryMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/victoru-WSZ1VqkBVohS1gFFfyFgdjpn3ObBST.mp3?5YwA"
+          );
+
+          this.load.audio(
+            "ClickFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/minimal-pop-click-ui-1-198301-UDXG34BcgCKKjEUHcx0hQqyHaSoUws.mp3?0BoM"
+          );
+
+          this.load.audio(
+            "StartGameFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/startgame-NjLdJEPwo07eV6hFAi8mkVzOoTABgL.mp3?6ZNH"
+          );
+          this.load.audio(
+            "HitFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/hit-zjSAbNHwMeQd6uSXHJMtVEKeBVONgX.mp3?0JMD"
+          );
+          this.load.audio(
+            "SplashFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/splash-xrNkkUsx6O3glcF05zpigM2qLydGwE.mp3?GdPo"
+          );
+
+          this.load.audio(
+            "FailFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/fail-AsvGZIaKqkpNQy9fS3GAIIlxQkoJ00.mp3?my16"
+          );
+
+          this.load.audio(
+            "PowerupFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/video-game-power-up-sound-effect-384657-JYy2onDAbZnyejheZrSFJlrAAK4F7S.mp3?HBC7"
+          );
+          this.load.audio(
+            "WooshFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/whoosh-breeze-389366-mCWflcqxspQN3RRs1AaPYIrnbZMPS5.mp3?FwPk"
+          );
+
+          // Load progress events
+          this.load.on("progress", this.updateLoadingBar, this);
+          this.load.on("complete", this.onLoadComplete, this);
+        }
+
+        createLoadingBar() {
+          this.cameras.main.fadeIn(500, 0, 0, 0);
+          this.cameras.main.setBackgroundColor(0x477dfd);
+
+          // Loading text
+          this.loadingText = this.add
+            .text(200, 280, "Loading...", {
+              fontFamily: "Fobble",
+              fontSize: "48px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Graphics for background
+          this.loadingBarBg = this.add.graphics();
+          this.loadingBarBg.fillStyle(0x000000, 0.3);
+          this.loadingBarBg.fillRoundedRect(50, 310, 300, 20, 10); // last param = corner radius
+
+          // Graphics for fill
+          this.loadingBarFill = this.add.graphics();
+          this.loadingBarFill.fillStyle(0xa9ff99, 1);
+          this.loadingBarFill.fillRoundedRect(50, 310, 0, 20, 10);
+
+          this.loadingBarWidth = 300;
+        }
+
+        updateLoadingBar(progress) {
+          // Update loading bar
+          this.loadingBarFill.clear();
+          this.loadingBarFill.fillStyle(0xa9ff99, 1);
+          this.loadingBarFill.fillRoundedRect(
+            50,
+            310,
+            this.loadingBarWidth * progress,
+            20,
+            10
+          );
+          // Update loading text
+          const percentage = Math.round(progress * 100);
+          this.loadingText.setText(`Loading... ${percentage}%`);
+        }
+
+        onLoadComplete() {
+          this.anims.create({
+            key: "walk",
+            frames: this.anims.generateFrameNumbers("pudgyPenguin", {
+              start: 0,
+              end: 30,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "piratewalk",
+            frames: this.anims.generateFrameNumbers("piratePenguin", {
+              start: 0,
+              end: 29,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "ninjawalk",
+            frames: this.anims.generateFrameNumbers("ninjaPenguin", {
+              start: 0,
+              end: 29,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "aviatorwalk",
+            frames: this.anims.generateFrameNumbers("aviatorPenguin", {
+              start: 0,
+              end: 29,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "vikingwalk",
+            frames: this.anims.generateFrameNumbers("vikingPenguin", {
+              start: 0,
+              end: 29,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          // Character textures are loaded as spritesheets
+
+          // Small delay before transitioning
+          this.time.delayedCall(1000, () => {
+            this.cameras.main.fadeOut(500);
+            this.scene.start("HubScene");
+          });
+        }
+      }
+
+      class HubScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "HubScene" });
+          this.selectedCharacter = gameData.currentCharacter || "classic";
+          this.selectedLevel = 1;
+          this.characters = [
+            { id: "classic", name: "CLASSIC PENGUIN", unlocked: true },
+            {
+              id: "pirate",
+              name: "PIRATE PENGUIN",
+              unlocked: gameData.unlockedCharacters.includes("pirate"),
+            },
+
+            {
+              id: "aviator",
+              name: "AVIATOR PENGUIN",
+              unlocked: gameData.unlockedCharacters.includes("aviator"),
+            },
+            {
+              id: "viking",
+              name: "VIKING PENGUIN",
+              unlocked: gameData.unlockedCharacters.includes("viking"),
+            },
+            {
+              id: "ninja",
+              name: "NINJA PENGUIN",
+              unlocked: gameData.unlockedCharacters.includes("ninja"),
+            },
+          ];
+        }
+
+        autoSelectBestOptions() {
+          // Auto-select latest unlocked character
+          this.selectedCharacter = this.getLatestUnlockedCharacter();
+          gameData.saveCurrentCharacter(this.selectedCharacter);
+
+          // Auto-select highest unlocked level
+          this.selectedLevel = gameData.highestLevel || 1;
+        }
+
+        getLatestUnlockedCharacter() {
+          // Return the last unlocked character, or classic if none unlocked
+          const unlockedCharacters = this.characters.filter(
+            (char) => char.unlocked
+          );
+          if (unlockedCharacters.length > 0) {
+            return unlockedCharacters[unlockedCharacters.length - 1].id;
+          }
+          return "classic";
+        }
+
+        preload() {}
+
+        getCharacterSpriteKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "pudgyPenguin";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratePenguin";
+            case "ninja":
+              return "ninjaPenguin";
+            case "aviator":
+              return "aviatorPenguin";
+            case "viking":
+              return "vikingPenguin";
+            default:
+              return "pudgyPenguin";
+          }
+        }
+
+        getCharacterWalkKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "walk";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratewalk";
+            case "ninja":
+              return "ninjawalk";
+            case "aviator":
+              return "aviatorwalk";
+            case "viking":
+              return "vikingwalk";
+            default:
+              return "walk";
+          }
+        }
+
+        getCharacterChargeKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "charge";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratecharge";
+            case "ninja":
+              return "ninjaroll";
+            case "aviator":
+              return "aviatorroll";
+            case "viking":
+              return "vikingroll";
+            default:
+              return "charge";
+          }
+        }
+
+        async create() {
+          // Initialize game data if not already done
+          if (!gameData.initialized) {
+            await gameData.initialize();
+          }
+
+          // Update characters array with current unlocked state
+          this.characters.forEach((character) => {
+            character.unlocked = gameData.unlockedCharacters.includes(
+              character.id
+            );
+          });
+
+          // Auto-select latest unlocked character and highest level
+          this.autoSelectBestOptions();
+
+          // Hide UI overlay in hub scene
+          const uiOverlay = document.getElementById("ui-overlay");
+          if (uiOverlay) {
+            uiOverlay.style.display = "none";
+          }
+
+          // Create multi-layer parallax background
+          this.createParallaxBackground();
+
+          // Title
+          this.add
+            .text(200, 75, "Pengu Royale", {
+              fontFamily: "Fobble",
+              fontSize: "80px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 10,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Player display
+          this.playerDisplay = this.add.sprite(
+            200,
+            375,
+            this.getCharacterSpriteKey()
+          );
+          this.playerDisplay.setScale(1);
+          this.playerDisplay.play(this.getCharacterWalkKey());
+
+          // Character selection
+          this.createCharacterSelection();
+
+          // Level selection
+          this.createLevelSelection();
+
+          // Stats display
+          this.createStatsDisplay();
+
+          // Play button
+          this.createPlayButton();
+
+          // Controls
+          this.setupHubControls();
+
+          // Update character navigation to reflect current unlock state
+          if (this.updateCharacterNavigation) {
+            this.updateCharacterNavigation();
+          }
+
+          // Start hub music (only if not already playing)
+          if (!this.hubMusic || !this.hubMusic.isPlaying) {
+            // Stop any existing hub music first
+            this.sound.stopAll();
+            this.hubMusic = this.sound.add("HudMusic", {
+              loop: true,
+              volume: 0.5,
+            });
+            if (!gameData.isMuted) {
+              this.hubMusic.play();
+            }
+          }
+        }
+
+        destroy() {
+          // Stop hub music when scene is destroyed
+          if (this.hubMusic) {
+            this.hubMusic.stop();
+          }
+          super.destroy();
+        }
+
+        createCharacterSelection() {
+          // Create character navigation arrows
+          this.createCharacterNavigation();
+        }
+
+        createCharacterNavigation() {
+          // Left arrow
+          this.leftArrow = this.add
+            .text(120, 405, "◄", {
+              fontSize: "32px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setInteractive()
+            .on("pointerdown", () => {
+              playSound(this, "ClickFx", { volume: 0.5 });
+              this.previousCharacter();
+            });
+
+          // Right arrow
+          this.rightArrow = this.add
+            .text(280, 405, "►", {
+              fontSize: "32px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setInteractive()
+            .on("pointerdown", () => {
+              playSound(this, "ClickFx", { volume: 0.5 });
+              this.nextCharacter();
+            });
+
+          // Character name display
+          this.characterNameText = this.add
+            .text(200, 290, this.getCurrentCharacterName(), {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#000000",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Character counter display
+          this.characterCounterText = this.add
+            .text(200, 410, "", {
+              fontFamily: "Menco",
+              fontSize: "32px",
+              fill: "#ffff00",
+              stroke: "#000000",
+              strokeThickness: 1,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setVisible(false);
+
+          // Unlock progress display
+          this.unlockProgressText = this.add
+            .text(200, 155, "", {
+              fontFamily: "Menco",
+              fontSize: "14px",
+              fill: "#000000",
+
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Save explanation text
+          /*  this.saveExplanationText = this.add
+            .text(200, 230, "Progress is saved between games.", {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#ff7474",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5); */
+
+          // Initialize with current character
+          this.currentCharacterIndex = this.getCurrentCharacterIndex();
+          this.updateCharacterNavigation();
+        }
+
+        getCurrentCharacterIndex() {
+          return this.characters.findIndex(
+            (character) => character.id === this.selectedCharacter
+          );
+        }
+
+        getCurrentCharacterName() {
+          const currentCharacter = this.characters.find(
+            (character) => character.id === this.selectedCharacter
+          );
+          return currentCharacter ? currentCharacter.name : "Classic Penguin";
+        }
+
+        getUnlockedCharacters() {
+          return this.characters.filter((character) => character.unlocked);
+        }
+
+        nextCharacter() {
+          const unlockedCharacters = this.getUnlockedCharacters();
+          const currentIndex = unlockedCharacters.findIndex(
+            (character) => character.id === this.selectedCharacter
+          );
+          const nextIndex = (currentIndex + 1) % unlockedCharacters.length;
+          this.selectCharacter(unlockedCharacters[nextIndex].id);
+        }
+
+        previousCharacter() {
+          const unlockedCharacters = this.getUnlockedCharacters();
+          const currentIndex = unlockedCharacters.findIndex(
+            (character) => character.id === this.selectedCharacter
+          );
+          const prevIndex =
+            currentIndex === 0
+              ? unlockedCharacters.length - 1
+              : currentIndex - 1;
+          this.selectCharacter(unlockedCharacters[prevIndex].id);
+        }
+
+        updateCharacterNavigation() {
+          // Update character name display
+          if (this.characterNameText) {
+            this.characterNameText.setText(this.getCurrentCharacterName());
+          }
+
+          // Update player character display
+          this.updatePlayerCharacter();
+
+          // Update character counter and progress
+          const unlockedCharacters = this.getUnlockedCharacters();
+          const totalCharacters = this.characters.length;
+
+          if (this.characterCounterText) {
+            this.characterCounterText.setText(
+              `${unlockedCharacters.length}/${totalCharacters} CHARACTERS UNLOCKED`
+            );
+          }
+
+          // Update unlock progress message
+          if (this.unlockProgressText) {
+            if (unlockedCharacters.length === totalCharacters) {
+              this.unlockProgressText.setText("🎉 ALL CHARACTERS UNLOCKED!");
+            } else if (unlockedCharacters.length === 1) {
+              this.unlockProgressText.setText(
+                "COMPLETE LEVELS TO UNLOCK CHARACTERS!"
+              );
+            } else {
+              this.unlockProgressText.setText(
+                "USE ARROWS TO BROWSE UNLOCKED CHARACTERS"
+              );
+            }
+          }
+
+          // Update arrow visibility and behavior
+          if (unlockedCharacters.length <= 1) {
+            this.leftArrow.setAlpha(0.3);
+            this.rightArrow.setAlpha(0.3);
+            this.leftArrow.setTint(0x666666);
+            this.rightArrow.setTint(0x666666);
+            // Remove interactivity when only one character
+            this.leftArrow.removeInteractive();
+            this.rightArrow.removeInteractive();
+          } else {
+            this.leftArrow.setAlpha(1);
+            this.rightArrow.setAlpha(1);
+            this.leftArrow.clearTint();
+            this.rightArrow.clearTint();
+            // Add interactivity when multiple characters
+            this.leftArrow.setInteractive();
+            this.rightArrow.setInteractive();
+          }
+        }
+
+        createLevelSelection() {
+          this.add
+            .text(200, 470, "SELECT LEVEL", {
+              fontFamily: "Fobble",
+              fontSize: "28px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 4,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          this.levelButtons = [];
+          const maxLevel = Math.min(gameData.highestLevel + 1, 6);
+
+          for (let i = 1; i <= maxLevel; i++) {
+            const x = 120 + (i - 1) * 20;
+            const y = 505;
+            const isUnlocked = i <= gameData.highestLevel;
+
+            const levelButton = this.add
+              .text(x, y, i.toString(), {
+                fontFamily: "Menco",
+                fontSize: "26px",
+                fill: isUnlocked ? "#ffffff" : "#666666",
+                stroke: "#000000",
+                strokeThickness: 3,
+                align: "center",
+              })
+              .setOrigin(0.5);
+
+            if (isUnlocked) {
+              levelButton.setInteractive();
+              levelButton.on("pointerdown", () => {
+                playSound(this, "ClickFx", { volume: 0.5 });
+                this.selectLevel(i, levelButton);
+              });
+            }
+
+            if (i === this.selectedLevel) {
+              levelButton.setTint(0xa9ff99);
+            }
+
+            this.levelButtons.push({
+              level: i,
+              button: levelButton,
+              unlocked: isUnlocked,
+            });
+          }
+        }
+
+        createStatsDisplay() {
+          this.add
+            .text(130, 125, `LEVEL: ${gameData.highestLevel}`, {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#000000",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+              fontWeight: "bold",
+            })
+            .setOrigin(0.5);
+
+          this.add
+            .text(270, 125, `SCORE: ${gameData.totalScore}`, {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#000000",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+        }
+
+        createPlayButton() {
+          const playButton = this.add
+            .text(200, 550, "START BATTLE", {
+              fontFamily: "Fobble",
+              fontSize: "42px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 5,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Add bobbing animation to catch attention
+          this.tweens.add({
+            targets: playButton,
+            y: 545,
+            duration: 1000,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+          });
+
+          playButton.setInteractive();
+          playButton.on("pointerdown", () => {
+            playSound(this, "StartGameFx", { volume: 0.6 });
+            this.startGame();
+          });
+        }
+
+        setupHubControls() {
+          this.cursors = this.input.keyboard.createCursorKeys();
+          this.spaceKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+          );
+          this.leftKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.A
+          );
+          this.rightKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.D
+          );
+        }
+
+        selectCharacter(characterId) {
+          const character = this.characters.find((c) => c.id === characterId);
+          if (!character || !character.unlocked) return;
+
+          this.selectedCharacter = characterId;
+          gameData.saveCurrentCharacter(characterId);
+          this.updateCharacterNavigation();
+        }
+
+        selectLevel(level, button) {
+          // Remove previous selection tint
+          this.levelButtons.forEach(({ button: btn }) => {
+            btn.clearTint();
+          });
+
+          // Add new selection tint
+          button.setTint(0xa9ff99);
+          this.selectedLevel = level;
+        }
+
+        updatePlayerCharacter() {
+          // Update player display sprite and animation
+          this.playerDisplay.setTexture(this.getCharacterSpriteKey());
+          this.playerDisplay.play(this.getCharacterWalkKey());
+        }
+
+        createParallaxBackground() {
+          // Layer 1: Sky (furthest back)
+          const sky = this.add.image(
+            this.sys.game.config.width / 2,
+            this.sys.game.config.height / 2,
+            "sky"
+          );
+
+          sky.setDepth(-1000);
+
+          // Layer 6: Clouds (multiple instances for parallax effect)
+          const clouds1 = this.add.image(-180, 40, "clouds");
+          clouds1.setScale(0.8);
+          clouds1.setDepth(-500);
+          clouds1.setAlpha(0.7);
+
+          const clouds2 = this.add.image(480, 80, "clouds");
+          clouds2.setScale(1.0);
+          clouds2.setDepth(-400);
+          clouds2.setAlpha(0.8);
+
+          const clouds3 = this.add.image(-150, 120, "clouds");
+          clouds3.setScale(1.2);
+          clouds3.setDepth(-300);
+          clouds3.setAlpha(0.9);
+
+          // Create snow effect
+          this.createSnowEffect();
+
+          // Start cloud movement
+          this.startCloudMovement();
+        }
+
+        createSnowEffect() {
+          // Create snowflake texture
+          this.createSnowflakeTexture();
+
+          // Create snow particles
+          this.snowParticles = this.add.particles(0, 0, "snowflake", {
+            x: { min: 0, max: 400 },
+            y: { min: -50, max: 0 },
+            speedX: { min: -20, max: 20 },
+            speedY: { min: 50, max: 100 },
+            scale: { min: 0.3, max: 0.8 },
+            alpha: { min: 0.3, max: 0.8 },
+            lifespan: 8000,
+            frequency: 100,
+            quantity: 1,
+          });
+          this.snowParticles.setDepth(-200);
+        }
+
+        createSnowflakeTexture() {
+          const graphics = this.add.graphics();
+          graphics.fillStyle(0xffffff, 1);
+          graphics.fillCircle(4, 4, 4);
+          graphics.generateTexture("snowflake", 8, 8);
+          graphics.destroy();
+        }
+
+        startCloudMovement() {
+          // Get all cloud images
+          const clouds = this.children.list.filter(
+            (child) => child.texture && child.texture.key === "clouds"
+          );
+
+          // Animate each cloud to move slowly across the screen
+          clouds.forEach((cloud, index) => {
+            const speed = 0.2 + index * 0.1; // Different speeds for each cloud
+            const direction = index % 2 === 0 ? 1 : -1; // Alternate directions
+
+            this.tweens.add({
+              targets: cloud,
+              x: cloud.x + direction * 200,
+              duration: 20000 + index * 5000, // Different durations
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.easeInOut",
+            });
+          });
+        }
+
+        fadeOutUIElements() {
+          // Get all UI elements (text, sprites, buttons) that are not background
+          const uiElements = this.children.list.filter(
+            (child) =>
+              child.depth >= 0 && // Not background elements
+              (child.type === "Text" ||
+                child.type === "Sprite" ||
+                child.type === "Container")
+          );
+
+          // Fade out all UI elements
+          uiElements.forEach((element) => {
+            this.tweens.add({
+              targets: element,
+              alpha: 0,
+              duration: 400,
+              ease: "Power2.easeOut",
+            });
+          });
+
+          // Also fade out snow particles
+          if (this.snowParticles) {
+            this.tweens.add({
+              targets: this.snowParticles,
+              alpha: 0,
+              duration: 400,
+              ease: "Power2.easeOut",
+            });
+          }
+        }
+
+        startGame() {
+          // Stop hub music before starting game
+          if (this.hubMusic) {
+            this.hubMusic.stop();
+          }
+
+          // Fade out all UI elements first
+          this.fadeOutUIElements();
+
+          // Create parallax zoom effect through layers after UI fades
+          this.time.delayedCall(500, () => {
+            this.createParallaxZoomEffect();
+          });
+
+          // Start game scene after zoom effect
+          this.time.delayedCall(1500, () => {
+            this.scene.start("GameScene", {
+              selectedCharacter: this.selectedCharacter,
+              selectedLevel: this.selectedLevel,
+              isNewGame: true,
+            });
+          });
+        }
+
+        createParallaxZoomEffect() {
+          // Get all background layers
+          const layers = this.children.list.filter((child) => child.depth < 0);
+
+          // Create dramatic parallax zoom effect
+          layers.forEach((layer, index) => {
+            const depth = Math.abs(layer.depth);
+            const parallaxFactor = depth / 1000; // 0 to 1 based on depth
+
+            // Closer layers (higher depth numbers) move more
+            const moveDistance = 300 * parallaxFactor;
+            const scaleMultiplier = 1 + parallaxFactor * 2; // Closer layers scale more
+
+            this.tweens.add({
+              targets: layer,
+              scaleX: layer.scaleX * scaleMultiplier,
+              scaleY: layer.scaleY * scaleMultiplier,
+
+              duration: 1500,
+            });
+          });
+
+          // Add camera zoom for cinematic effect
+          this.cameras.main.fadeOut(1500);
+        }
+
+        update() {
+          // Safety check - ensure input system is ready
+          if (!this.input || !this.input.keyboard) return;
+
+          // Handle keyboard navigation
+          if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            this.startGame();
+          }
+
+          // Handle character navigation
+          if (
+            (this.leftKey && Phaser.Input.Keyboard.JustDown(this.leftKey)) ||
+            (this.cursors &&
+              this.cursors.left &&
+              Phaser.Input.Keyboard.JustDown(this.cursors.left))
+          ) {
+            this.previousCharacter();
+          }
+          if (
+            (this.rightKey && Phaser.Input.Keyboard.JustDown(this.rightKey)) ||
+            (this.cursors &&
+              this.cursors.right &&
+              Phaser.Input.Keyboard.JustDown(this.cursors.right))
+          ) {
+            this.nextCharacter();
+          }
+        }
+      }
+
+      class GameScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "GameScene" });
+          this.player = null;
+          this.aiPenguins = null;
+          this.powerups = null;
+          this.cursors = null;
+          this.wasd = null;
+          this.spaceKey = null;
+          this.playerCanCharge = true;
+          this.isCharging = false;
+          this.chargeForce = 150;
+          this.gameRunning = true;
+          this.iceRadius = 200;
+          this.centerX = 200;
+          this.centerY = 300;
+          this.currentLevel = 1;
+          this.baseAICount = 1;
+          this.levelTransitioning = false;
+          this.aiCollider = null;
+          this.playerAICollider = null;
+          this.edgeBuffer = 50;
+          this.selectedCharacter = "classic";
+          this.selectedLevel = 1;
+          this.characters = [
+            { id: "classic", name: "CLASSIC PENGUIN", unlocked: true },
+            { id: "pirate", name: "PIRATE PENGUIN", unlocked: false },
+
+            { id: "aviator", name: "AVIATOR PENGUIN", unlocked: false },
+            { id: "viking", name: "VIKING PENGUIN", unlocked: false },
+            { id: "ninja", name: "NINJA PENGUIN", unlocked: false },
+          ];
+        }
+
+        init(data) {
+          // Receive data from hub scene
+          if (data) {
+            this.selectedCharacter = data.selectedCharacter || "classic";
+            this.selectedLevel = data.selectedLevel || 1;
+            this.currentLevel = this.selectedLevel;
+            this.isNewGame = data.isNewGame !== false; // Default to true if not specified
+          } else {
+            this.isNewGame = true; // Default to new game if no data
+          }
+
+          // Update characters array with current unlocked state
+          this.characters.forEach((character) => {
+            character.unlocked = gameData.unlockedCharacters.includes(
+              character.id
+            );
+          });
+
+          // Reset level transition state
+          this.levelTransitioning = false;
+        }
+
+        preload() {
+          // Assets already loaded in BootLoader
+        }
+
+        getCharacterSpriteKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "pudgyPenguin";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratePenguin";
+            case "ninja":
+              return "ninjaPenguin";
+            case "aviator":
+              return "aviatorPenguin";
+            case "viking":
+              return "vikingPenguin";
+            default:
+              return "pudgyPenguin";
+          }
+        }
+
+        getCharacterWalkKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "walk";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratewalk";
+            case "ninja":
+              return "ninjawalk";
+            case "aviator":
+              return "aviatorwalk";
+            case "viking":
+              return "vikingwalk";
+            default:
+              return "walk";
+          }
+        }
+
+        getCharacterChargeKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "charge";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratecharge";
+            case "ninja":
+              return "ninjaroll";
+            case "aviator":
+              return "aviatorroll";
+            case "viking":
+              return "vikingroll";
+            default:
+              return "charge";
+          }
+        }
+
+        getLatestUnlockedCharacter() {
+          // Return the last unlocked character, or classic if none unlocked
+          const unlockedCharacters = this.characters.filter((char) =>
+            gameData.unlockedCharacters.includes(char.id)
+          );
+          if (unlockedCharacters.length > 0) {
+            return unlockedCharacters[unlockedCharacters.length - 1].id;
+          }
+          return "classic";
+        }
+
+        createWaterSprite() {
+          const g = this.add.graphics();
+          const w = 420,
+            h = 700;
+
+          // Level-specific color themes
+          let deepColor, shallowColor, waveColor, bubbleColor;
+
+          if (this.currentLevel >= 6) {
+            // Level 6+: Random theme - pick a random theme
+            const themes = [
+              // Pirate theme
+              {
+                deep: Phaser.Display.Color.GetColor(25, 118, 210),
+                shallow: Phaser.Display.Color.GetColor(100, 181, 246),
+                wave: 0xffffff,
+                bubble: 0xffffff,
+              },
+              // Aviator theme
+              {
+                deep: Phaser.Display.Color.GetColor(135, 206, 250),
+                shallow: Phaser.Display.Color.GetColor(173, 216, 230),
+                wave: 0xffffff,
+                bubble: 0xffffe0,
+              },
+              // Viking theme
+              {
+                deep: Phaser.Display.Color.GetColor(75, 25, 25),
+                shallow: Phaser.Display.Color.GetColor(150, 50, 50),
+                wave: 0xff4500,
+                bubble: 0xffd700,
+              },
+              // Ninja theme
+              {
+                deep: Phaser.Display.Color.GetColor(25, 25, 50),
+                shallow: Phaser.Display.Color.GetColor(50, 50, 100),
+                wave: 0x4a4a4a,
+                bubble: 0x808080,
+              },
+            ];
+            const randomTheme =
+              themes[Math.floor(Math.random() * themes.length)];
+            deepColor = randomTheme.deep;
+            shallowColor = randomTheme.shallow;
+            waveColor = randomTheme.wave;
+            bubbleColor = randomTheme.bubble;
+          } else if (this.currentLevel >= 5) {
+            // Level 5: Ninja theme - dark/night theme
+            deepColor = Phaser.Display.Color.GetColor(25, 25, 50); // #191932 - dark navy
+            shallowColor = Phaser.Display.Color.GetColor(50, 50, 100); // #323264 - dark purple
+            waveColor = 0x4a4a4a; // dark gray waves
+            bubbleColor = 0x808080; // gray bubbles
+          } else if (this.currentLevel >= 4) {
+            // Level 4: Viking theme - fire/volcanic theme
+            deepColor = Phaser.Display.Color.GetColor(75, 25, 25); // #4b1919 - deep red
+            shallowColor = Phaser.Display.Color.GetColor(150, 50, 50); // #963232 - medium red
+            waveColor = 0xff4500; // orange-red lava
+            bubbleColor = 0xffd700; // gold fire bubbles
+          } else if (this.currentLevel >= 3) {
+            // Level 3: Aviator theme - sky/cloud theme
+            deepColor = Phaser.Display.Color.GetColor(135, 206, 250); // #87ceeb - sky blue
+            shallowColor = Phaser.Display.Color.GetColor(173, 216, 230); // #add8e6 - light blue
+            waveColor = 0xffffff; // white clouds
+            bubbleColor = 0xffffe0; // light yellow bubbles
+          } else if (this.currentLevel >= 1) {
+            // Level 1-2: Pirate theme - ocean theme
+            deepColor = Phaser.Display.Color.GetColor(25, 118, 210); // #1976d2 - vibrant blue
+            shallowColor = Phaser.Display.Color.GetColor(100, 181, 246); // #64b5f6 - light blue
+            waveColor = 0xffffff; // white waves
+            bubbleColor = 0xffffff; // white bubbles
+          } else {
+            // Default ocean theme
+            deepColor = Phaser.Display.Color.GetColor(25, 118, 210); // #1976d2 - vibrant blue
+            shallowColor = Phaser.Display.Color.GetColor(100, 181, 246); // #64b5f6 - light blue
+            waveColor = 0xffffff; // white waves
+            bubbleColor = 0xffffff; // white bubbles
+          }
+
+          // Smooth cartoony gradient (deep → shallow)
+          for (let y = 0; y <= h; y += 1) {
+            const color = Phaser.Display.Color.Interpolate.ColorWithColor(
+              Phaser.Display.Color.ValueToColor(shallowColor),
+              Phaser.Display.Color.ValueToColor(deepColor),
+              h,
+              y
+            );
+            g.fillStyle(
+              Phaser.Display.Color.GetColor(color.r, color.g, color.b),
+              1
+            );
+            g.fillRect(0, y, w, 1);
+          }
+
+          // Cartoony wave bands with smooth curves
+          for (let i = 0; i < 4; i++) {
+            g.fillStyle(
+              waveColor,
+              this.currentLevel >= 5
+                ? 0.1
+                : this.currentLevel >= 4
+                ? 0.2
+                : this.currentLevel >= 3
+                ? 0.15
+                : 0.1
+            );
+            const stripH = 40;
+            const y0 = Math.floor((i + 1) * (h / 5));
+            for (let x = 0; x <= w; x += 2) {
+              const yy = Math.floor(y0 + Math.sin(x * 0.01 + i * 1.5) * 12);
+              g.fillRect(x, yy, 2, stripH);
+            }
+          }
+
+          // Add some subtle bubbles
+          for (let i = 0; i < 8; i++) {
+            const x = Math.floor(Math.random() * w);
+            const y = Math.floor(Math.random() * h);
+            const size = Math.floor(2 + Math.random() * 3);
+
+            g.fillStyle(bubbleColor, 0.4);
+            g.fillCircle(x, y, size);
+          }
+
+          g.generateTexture("waterPlatform", w, h);
+          g.destroy();
+        }
+
+        createIceSprite() {
+          const iceGraphics = this.add.graphics();
+
+          // High resolution for crisp cartoony look
+          const highRadius = this.iceRadius;
+          const size = Math.ceil(highRadius * 2.2);
+          const center = Math.floor(size / 2);
+
+          // Create irregular ice shape with more organic curves
+          const points = [];
+          for (let i = 0; i < 64; i++) {
+            const angle = (i / 64) * Math.PI * 2;
+            const radius = highRadius * (0.85 + Math.random() * 0.15);
+            const x = Math.floor(center + Math.cos(angle) * radius);
+            const y = Math.floor(center + Math.sin(angle) * radius);
+            points.push(new Phaser.Geom.Point(x, y));
+          }
+
+          // Level-specific ice platform colors
+          let platformColor, outlineColor, highlightColor, sparkleColor;
+
+          if (this.currentLevel >= 6) {
+            // Level 6+: Random theme - pick a random theme
+            const themes = [
+              // Pirate theme
+              {
+                platform: 0xe0f6ff,
+                outline: 0x87ceeb,
+                highlight: 0xffffff,
+                sparkle: 0xffffff,
+              },
+              // Aviator theme
+              {
+                platform: 0xf0f8ff,
+                outline: 0xb0c4de,
+                highlight: 0xffffff,
+                sparkle: 0xffd700,
+              },
+              // Viking theme
+              {
+                platform: 0x8b0000,
+                outline: 0xff4500,
+                highlight: 0xffd700,
+                sparkle: 0xff6347,
+              },
+              // Ninja theme
+              {
+                platform: 0x2c2c54,
+                outline: 0x40407a,
+                highlight: 0x706fd3,
+                sparkle: 0x00ff00,
+              },
+            ];
+            const randomTheme =
+              themes[Math.floor(Math.random() * themes.length)];
+            platformColor = randomTheme.platform;
+            outlineColor = randomTheme.outline;
+            highlightColor = randomTheme.highlight;
+            sparkleColor = randomTheme.sparkle;
+          } else if (this.currentLevel >= 5) {
+            // Level 5: Ninja theme - dark/stealth theme
+            platformColor = 0x2c2c54; // #2c2c54 - dark purple
+            outlineColor = 0x40407a; // #40407a - medium purple
+            highlightColor = 0x706fd3; // #706fd3 - light purple highlight
+            sparkleColor = 0x00ff00; // green sparkles (ninja energy)
+          } else if (this.currentLevel >= 4) {
+            // Level 4: Viking theme - fire/volcanic theme
+            platformColor = 0x8b0000; // #8b0000 - dark red (volcanic rock)
+            outlineColor = 0xff4500; // #ff4500 - orange-red outline
+            highlightColor = 0xffd700; // gold highlight
+            sparkleColor = 0xff6347; // tomato red sparkles (fire embers)
+          } else if (this.currentLevel >= 3) {
+            // Level 3: Aviator theme - cloud/sky theme
+            platformColor = 0xf0f8ff; // #f0f8ff - alice blue (cloud-like)
+            outlineColor = 0xb0c4de; // #b0c4de - light steel blue
+            highlightColor = 0xffffff; // white highlight
+            sparkleColor = 0xffd700; // gold sparkles (sunlight)
+          } else {
+            // Level 1-2: Pirate theme - ocean theme
+            platformColor = 0xe0f6ff; // #e0f6ff - light blue
+            outlineColor = 0x87ceeb; // #87ceeb - sky blue
+            highlightColor = 0xffffff; // white highlight
+            sparkleColor = 0xffffff; // white sparkles
+          }
+
+          // Main ice platform with solid fill
+          iceGraphics.fillStyle(platformColor, 1);
+          iceGraphics.beginPath();
+          iceGraphics.moveTo(points[0].x, points[0].y);
+          for (let i = 1; i < points.length; i++) {
+            iceGraphics.lineTo(points[i].x, points[i].y);
+          }
+          iceGraphics.closePath();
+          iceGraphics.fillPath();
+
+          // Thick cartoony outline
+          iceGraphics.lineStyle(8, outlineColor, 1);
+          iceGraphics.strokePath();
+
+          // Inner highlight for 3D effect
+          iceGraphics.lineStyle(4, highlightColor, 1);
+          iceGraphics.strokePath();
+
+          // Add cartoony ice crystals and sparkles
+          for (let i = 0; i < 12; i++) {
+            const angle = (i / 12) * Math.PI * 2;
+            const radius = highRadius * (0.6 + Math.random() * 0.3);
+            const x = Math.floor(center + Math.cos(angle) * radius);
+            const y = Math.floor(center + Math.sin(angle) * radius);
+
+            // Crystal sparkle
+            iceGraphics.fillStyle(sparkleColor, 1);
+            iceGraphics.fillCircle(x, y, 4);
+
+            // Inner glow
+            iceGraphics.fillStyle(sparkleColor, 0.7);
+            iceGraphics.fillCircle(x, y, 2);
+          }
+
+          // Add some random smaller sparkles
+          for (let i = 0; i < 20; i++) {
+            const x = Math.floor(
+              center + (Math.random() - 0.5) * highRadius * 1.5
+            );
+            const y = Math.floor(
+              center + (Math.random() - 0.5) * highRadius * 1.5
+            );
+            const distance = Math.sqrt((x - center) ** 2 + (y - center) ** 2);
+
+            if (distance < highRadius * 0.8) {
+              iceGraphics.fillStyle(sparkleColor, 1);
+              iceGraphics.fillCircle(x, y, 2);
+            }
+          }
+
+          iceGraphics.generateTexture("icePlatform", size, size);
+          iceGraphics.destroy();
+        }
+
+        spawnSnowflake() {
+          const x = Phaser.Math.Between(0, this.sys.game.config.width);
+          const y = Phaser.Math.Between(-10, this.sys.game.config.height / 2);
+
+          let size, color, alpha, speedY, driftX;
+
+          if (this.currentLevel >= 6) {
+            // Level 6+: Random theme - pick a random theme
+            const themes = [
+              // Pirate theme
+              {
+                size: [1.5, 3.5],
+                color: 0xffffff,
+                alpha: [0.9, 0.9],
+                speedY: [20, 50],
+                driftX: [-0.3, 0.3],
+              },
+              // Aviator theme
+              {
+                size: [10, 15],
+                color: 0xffffff,
+                alpha: [0.3, 0.7],
+                speedY: [10, 30],
+                driftX: [-0.5, 0.5],
+              },
+              // Viking theme
+              {
+                size: [2, 5],
+                color: 0xff4500,
+                alpha: [0.7, 0.9],
+                speedY: [30, 70],
+                driftX: [-1.5, 1.5],
+              },
+              // Ninja theme
+              {
+                size: [2, 4],
+                color: 0x00ff00,
+                alpha: [0.4, 0.8],
+                speedY: [15, 40],
+                driftX: [-0.8, 0.8],
+              },
+            ];
+            const randomTheme =
+              themes[Math.floor(Math.random() * themes.length)];
+            size = Phaser.Math.FloatBetween(
+              randomTheme.size[0],
+              randomTheme.size[1]
+            );
+            color = randomTheme.color;
+            alpha = Phaser.Math.FloatBetween(
+              randomTheme.alpha[0],
+              randomTheme.alpha[1]
+            );
+            speedY = Phaser.Math.FloatBetween(
+              randomTheme.speedY[0],
+              randomTheme.speedY[1]
+            );
+            driftX = Phaser.Math.FloatBetween(
+              randomTheme.driftX[0],
+              randomTheme.driftX[1]
+            );
+          } else if (this.currentLevel >= 5) {
+            // Level 5: Ninja level - stealth particles
+            size = Phaser.Math.FloatBetween(2, 4); // medium size
+            color = 0x00ff00; // green ninja energy
+            alpha = Phaser.Math.FloatBetween(0.4, 0.8); // semi-transparent
+            speedY = Phaser.Math.FloatBetween(15, 40); // medium speed
+            driftX = Phaser.Math.FloatBetween(-0.8, 0.8); // more drift
+          } else if (this.currentLevel >= 4) {
+            // Level 4: Viking level - fire ember effects
+            size = Phaser.Math.FloatBetween(2, 5); // medium fire embers
+            color = 0xff4500; // orange-red fire
+            alpha = Phaser.Math.FloatBetween(0.7, 0.9); // bright and opaque
+            speedY = Phaser.Math.FloatBetween(30, 70); // fast falling embers
+            driftX = Phaser.Math.FloatBetween(-1.5, 1.5); // more chaotic drift
+          } else if (this.currentLevel >= 3) {
+            // Level 3: Aviator level - cloud-like effects
+            size = Phaser.Math.FloatBetween(10, 15); // larger, cloud-like
+            color = 0xffffff; // white clouds
+            alpha = Phaser.Math.FloatBetween(0.3, 0.7); // more transparent
+            speedY = Phaser.Math.FloatBetween(10, 30); // slower, floating
+            driftX = Phaser.Math.FloatBetween(-0.5, 0.5); // gentle drift
+          } else {
+            // Level 1-2: Pirate level - default snowflakes
+            size = Phaser.Math.FloatBetween(1.5, 3.5);
+            color = 0xffffff;
+            alpha = 0.9;
+            speedY = Phaser.Math.FloatBetween(20, 50);
+            driftX = Phaser.Math.FloatBetween(-0.3, 0.3);
+          }
+
+          const flake = this.add.circle(x, y, size, color, alpha);
+          flake.speedY = speedY;
+          flake.driftX = driftX;
+
+          this.snowflakes.add(flake);
+        }
+
+        createPowerupTextures() {
+          // No need to create textures - we'll use the fish images directly
+          // The fish images are already loaded as "fishblue", "fishred", "fishgreen"
+        }
+
+        spawnPowerup() {
+          if (!this.gameRunning) return;
+          const type = Phaser.Math.Between(0, 2);
+          const angle = Math.random() * Math.PI * 2;
+          const r = Phaser.Math.Between(50, this.iceRadius - 50);
+          const x = this.centerX + Math.cos(angle) * r;
+          const y = this.centerY + Math.sin(angle) * r;
+
+          // Use fish images instead of generated textures
+          const key =
+            type === 0 ? "fishblue" : type === 1 ? "fishred" : "fishgreen";
+          const pu = this.add.sprite(x, y, key).setScale(0.6); // Slightly smaller scale for fish
+          this.powerups.add(pu);
+          this.physics.add.existing(pu);
+          pu.body.setSize(24, 24); // Slightly larger collision box for fish
+          pu.body.setAllowGravity(false);
+          pu.body.moves = false;
+          pu.type = type;
+          pu.setActive(true).setVisible(true);
+
+          // Add a subtle floating animation to make fish look alive
+          this.tweens.add({
+            targets: pu,
+            y: pu.y - 5,
+            duration: 2000,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+          });
+        }
+
+        updateGlow(entity) {
+          const hasBoost =
+            entity.speedBoostEnd || entity.knockbackEnd || entity.cooldownEnd;
+          if (hasBoost) {
+            if (!entity.glow) {
+              const glowColor = entity.activePowerupColor || 0xffffff;
+
+              // Create cartoony glow with multiple layers
+              const outerGlow = this.add.circle(
+                entity.x,
+                entity.y,
+                35,
+                glowColor,
+                0.1
+              );
+              const middleGlow = this.add.circle(
+                entity.x,
+                entity.y,
+                25,
+                glowColor,
+                0.2
+              );
+              const innerGlow = this.add.circle(
+                entity.x,
+                entity.y,
+                15,
+                glowColor,
+                0.3
+              );
+
+              entity.glow = {
+                outer: outerGlow,
+                middle: middleGlow,
+                inner: innerGlow,
+              };
+
+              // Animate the glow layers with different timings for cartoony effect
+              this.tweens.add({
+                targets: outerGlow,
+                scale: 1.3,
+                alpha: 0.1,
+                duration: 1000,
+                yoyo: true,
+                repeat: -1,
+                ease: "Sine.easeInOut",
+              });
+              this.tweens.add({
+                targets: middleGlow,
+                scale: 1.2,
+                alpha: 0.3,
+                duration: 800,
+                yoyo: true,
+                repeat: -1,
+                ease: "Sine.easeInOut",
+              });
+              this.tweens.add({
+                targets: innerGlow,
+                scale: 1.1,
+                alpha: 0.5,
+                duration: 600,
+                yoyo: true,
+                repeat: -1,
+                ease: "Sine.easeInOut",
+              });
+            } else {
+              // Follow the entity
+              entity.glow.outer.setPosition(entity.x, entity.y);
+              entity.glow.middle.setPosition(entity.x, entity.y);
+              entity.glow.inner.setPosition(entity.x, entity.y);
+
+              if (entity.activePowerupColor) {
+                entity.glow.outer.setFillStyle(entity.activePowerupColor, 0.1);
+                entity.glow.middle.setFillStyle(entity.activePowerupColor, 0.2);
+                entity.glow.inner.setFillStyle(entity.activePowerupColor, 0.3);
+              }
+            }
+
+            // Update powerup text indicator
+            this.updatePowerupText(entity);
+          } else {
+            if (entity.glow) {
+              entity.glow.outer.destroy();
+              entity.glow.middle.destroy();
+              entity.glow.inner.destroy();
+              delete entity.glow;
+            }
+            if (entity.powerupText) {
+              entity.powerupText.destroy();
+              delete entity.powerupText;
+            }
+          }
+        }
+
+        updatePowerupText(entity) {
+          // Determine which powerup is active (prioritize the most recent one)
+          let powerupType = "";
+          let textColor = "#ffffff";
+          const now = this.time.now;
+
+          // Check which powerup is currently active and has the latest end time
+          let latestEndTime = 0;
+          let activePowerup = null;
+
+          if (
+            entity.speedBoostEnd &&
+            entity.speedBoostEnd > now &&
+            entity.speedBoostEnd > latestEndTime
+          ) {
+            latestEndTime = entity.speedBoostEnd;
+            activePowerup = "speed";
+          }
+          if (
+            entity.knockbackEnd &&
+            entity.knockbackEnd > now &&
+            entity.knockbackEnd > latestEndTime
+          ) {
+            latestEndTime = entity.knockbackEnd;
+            activePowerup = "knockback";
+          }
+          if (
+            entity.cooldownEnd &&
+            entity.cooldownEnd > now &&
+            entity.cooldownEnd > latestEndTime
+          ) {
+            latestEndTime = entity.cooldownEnd;
+            activePowerup = "cooldown";
+          }
+
+          // Set the text based on the most recent active powerup
+          if (activePowerup === "speed") {
+            powerupType = "SPEED++";
+            textColor = "#00bfff"; // Blue
+          } else if (activePowerup === "knockback") {
+            powerupType = "POWER++";
+            textColor = "#ff4500"; // Red
+          } else if (activePowerup === "cooldown") {
+            powerupType = "CHARGE++";
+            textColor = "#00ff00"; // Green
+          }
+
+          if (powerupType) {
+            if (!entity.powerupText) {
+              entity.powerupText = this.add
+                .text(entity.x, entity.y - 40, powerupType, {
+                  fontFamily: "Fobble",
+                  fontSize: "16px",
+                  fill: textColor,
+                  stroke: "#000000",
+                  strokeThickness: 3,
+                  align: "center",
+                })
+                .setOrigin(0.5)
+                .setDepth(60);
+
+              // Add bobbing animation to the text
+              this.tweens.add({
+                targets: entity.powerupText,
+                y: entity.powerupText.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+            } else {
+              // Update existing text
+              entity.powerupText.setPosition(entity.x, entity.y - 40);
+              entity.powerupText.setText(powerupType);
+              entity.powerupText.setStyle({ fill: textColor });
+            }
+          }
+        }
+
+        create() {
+          this.cameras.main.fadeIn(500, 0, 0, 0);
+          // Show UI overlay in game scene
+          const uiOverlay = document.getElementById("ui-overlay");
+          if (uiOverlay) {
+            uiOverlay.style.display = "block";
+          }
+
+          // Reset game state
+          this.gameRunning = true;
+
+          // Initialize score - use saved total score if available, otherwise start at 0
+          if (this.score === undefined) {
+            this.score = gameData.totalScore || 0;
+          }
+
+          this.playerCanCharge = true;
+          this.isCharging = false;
+
+          // Update UI with initial values
+          this.updateUI();
+
+          // Create animations
+
+          this.anims.create({
+            key: "charge",
+            frames: this.anims.generateFrameNumbers("pudgyPenguinRoll", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "piratecharge",
+            frames: this.anims.generateFrameNumbers("piratePenguinRoll", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "ninjaroll",
+            frames: this.anims.generateFrameNumbers("ninjaPenguinRoll", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "aviatorroll",
+            frames: this.anims.generateFrameNumbers("aviatorPenguinRoll", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "vikingroll",
+            frames: this.anims.generateFrameNumbers("vikingPenguinRoll", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "win",
+            frames: this.anims.generateFrameNumbers("winner", {
+              start: 0,
+              end: 54,
+            }),
+            frameRate: 15,
+            repeat: 0,
+          });
+
+          // Snowflake group
+          this.snowflakes = this.add.group();
+
+          // Create particle groups for effects
+          this.celebrationParticles = this.add.group();
+          this.powerupParticles = this.add.group();
+
+          // Level-specific particle effects
+          const particleCount =
+            this.currentLevel >= 5
+              ? 18
+              : this.currentLevel >= 4
+              ? 30
+              : this.currentLevel >= 3
+              ? 15
+              : 20; // ninja stealth particles, viking fire embers, aviator clouds, pirate snowflakes
+          const spawnDelay =
+            this.currentLevel >= 5
+              ? 600
+              : this.currentLevel >= 4
+              ? 200
+              : this.currentLevel >= 3
+              ? 800
+              : 500; // ninja medium, viking fast, aviator slow, pirate normal
+
+          for (let i = 0; i < particleCount; i++) {
+            this.spawnSnowflake();
+          }
+
+          // Timer to spawn particles
+          this.time.addEvent({
+            delay: spawnDelay,
+            callback: this.spawnSnowflake,
+            callbackScope: this,
+            loop: true,
+          });
+
+          // Create water sprite first (full background, pixelated)
+          this.createWaterSprite();
+          const water = this.add
+            .image(200, 300, "waterPlatform")
+            .setOrigin(0.5);
+          this.tweens.add({
+            targets: water,
+            y: "+=8",
+            duration: 3000,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut",
+          });
+          this.tweens.add({
+            targets: water,
+            scaleY: 1.02,
+            duration: 2400,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut",
+          });
+
+          // Create ice sprite (cartoony)
+          this.createIceSprite();
+          // Add ice platform - centered properly
+          this.add
+            .image(this.centerX, this.centerY, "icePlatform")
+            .setOrigin(0.5, 0.5);
+
+          // Create powerup textures
+          this.createPowerupTextures();
+
+          // Powerups group
+          this.powerups = this.add.group();
+
+          // AI penguins group
+          this.aiPenguins = this.add.group();
+
+          // Create physics world
+          this.physics.world.setBounds(0, 0, 400, 600);
+
+          // Create player
+          this.player = this.physics.add.sprite(
+            this.centerX,
+            this.centerY - 50,
+            this.getCharacterSpriteKey()
+          );
+          this.player.play(this.getCharacterWalkKey());
+          this.player.setCollideWorldBounds(false);
+          this.player.body.setDrag(350);
+          this.player.body.setBounce(0.2);
+          this.player.body.setMaxVelocity(55);
+          this.player.knockbackMultiplier = 1.0;
+          this.player.cooldownMultiplier = 1.0;
+          this.player.setScale(0.4);
+
+          // Set custom hitbox size for tighter collision detection
+          this.player.body.setSize(80, 80);
+
+          // Player character is already set in sprite creation
+
+          // Level start zoom effect
+          this.startLevelZoomEffect();
+
+          // Create AI penguins
+          this.createAIPenguins();
+
+          // Powerup collisions
+          this.physics.add.overlap(
+            this.player,
+            this.powerups,
+            this.pickupPowerup,
+            null,
+            this
+          );
+          this.physics.add.overlap(
+            this.aiPenguins,
+            this.powerups,
+            this.pickupPowerup,
+            null,
+            this
+          );
+
+          // Controls
+          this.cursors = this.input.keyboard.createCursorKeys();
+          this.wasd = this.input.keyboard.addKeys("W,S,A,D");
+          this.spaceKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+          );
+
+          // Mobile touch controls
+          this.setupTouchControls();
+
+          // Powerup spawn timer
+          this.time.addEvent({
+            delay: 10000,
+            callback: this.spawnPowerup,
+            callbackScope: this,
+            loop: true,
+          });
+
+          // AI behavior timer - gets faster each level for more chaos
+          const aiUpdateDelay = Math.max(
+            600,
+            1500 - (this.currentLevel - 1) * 150
+          );
+          this.time.addEvent({
+            delay: aiUpdateDelay,
+            callback: this.updateAIBehavior,
+            callbackScope: this,
+            loop: true,
+          });
+
+          // Game ready - SDK initialization handled globally
+
+          // Show tutorial text for level 1
+          if (this.currentLevel === 1) {
+            this.createTutorialText();
+          }
+
+          // Start level music based on theme
+          this.startLevelMusic();
+        }
+
+        startLevelMusic() {
+          // Stop any existing music
+          if (this.levelMusic) {
+            this.levelMusic.stop();
+          }
+
+          // Determine music based on level theme
+          let musicKey;
+          if (this.currentLevel >= 1 && this.currentLevel <= 2) {
+            musicKey = "PirateMusic";
+          } else if (this.currentLevel === 3) {
+            musicKey = "AviatorMusic";
+          } else if (this.currentLevel === 4) {
+            musicKey = "VikingMusic";
+          } else if (this.currentLevel === 5) {
+            musicKey = "NinjaMusic";
+          } else {
+            // Level 11+: Random theme
+            const themes = [
+              "PirateMusic",
+              "AviatorMusic",
+              "VikingMusic",
+              "NinjaMusic",
+            ];
+            musicKey = themes[Math.floor(Math.random() * themes.length)];
+          }
+
+          // Start the music
+          this.levelMusic = this.sound.add(musicKey, {
+            loop: true,
+            volume: 0.3,
+          });
+          if (!gameData.isMuted) {
+            this.levelMusic.play();
+          }
+        }
+
+        createTutorialText() {
+          // Create tutorial text
+          const tutorialText = this.add
+            .text(
+              this.centerX,
+              this.centerY - 200,
+              "KNOCK YOUR OPPONENTS OFF THE ICE",
+              {
+                fontFamily: "Fobble",
+                fontSize: "28px",
+                fill: "#ffffff",
+                stroke: "#000000",
+                strokeThickness: 4,
+                align: "center",
+              }
+            )
+            .setOrigin(0.5)
+            .setDepth(200)
+            .setScale(0)
+            .setAlpha(0);
+
+          // Pop-in animation
+          this.tweens.add({
+            targets: tutorialText,
+            scale: 1,
+            alpha: 1,
+            duration: 800,
+            ease: "Back.easeOut",
+            delay: 1000, // Wait 1 second after level starts
+          });
+
+          // Auto-fade after 4 seconds
+          this.time.delayedCall(5000, () => {
+            this.tweens.add({
+              targets: tutorialText,
+              alpha: 0,
+              duration: 1000,
+              ease: "Power2.easeOut",
+              onComplete: () => {
+                tutorialText.destroy();
+              },
+            });
+          });
+        }
+
+        createAIPenguins() {
+          // Clear existing AI penguins
+          this.aiPenguins.clear(true, true);
+
+          // Calculate number of AIs for this level
+          const numAI = this.baseAICount + (this.currentLevel - 1);
+
+          for (let i = 0; i < numAI; i++) {
+            const angle = (i / numAI) * Math.PI * 2;
+            const radius = 80 + Math.random() * 100;
+            const x = this.centerX + Math.cos(angle) * radius;
+            const y = this.centerY + Math.sin(angle) * radius;
+
+            // Determine AI character based on level theme
+            let aiCharacter = "classic"; // Default to classic
+            if (this.currentLevel >= 6) {
+              // Level 11+: Random theme - mix all characters
+              const characters = [
+                "classic",
+                "pirate",
+                "aviator",
+                "viking",
+                "ninja",
+              ];
+              aiCharacter =
+                characters[Math.floor(Math.random() * characters.length)];
+            } else if (this.currentLevel >= 5) {
+              // Level 9-10: Ninja theme - only ninja characters
+              const characters = ["ninja"];
+              aiCharacter =
+                characters[Math.floor(Math.random() * characters.length)];
+            } else if (this.currentLevel >= 4) {
+              // Level 6-8: Viking theme - only viking characters
+              const characters = ["viking"];
+              aiCharacter =
+                characters[Math.floor(Math.random() * characters.length)];
+            } else if (this.currentLevel >= 3) {
+              // Level 3-5: Aviator theme - only aviator characters
+              const characters = ["aviator"];
+              aiCharacter =
+                characters[Math.floor(Math.random() * characters.length)];
+            } else if (this.currentLevel >= 1) {
+              // Level 1-2: Pirate theme - only pirate characters
+              const characters = ["pirate"];
+              aiCharacter =
+                characters[Math.floor(Math.random() * characters.length)];
+            }
+
+            // Get sprite and animation keys for AI character
+            let aiSpriteKey, aiWalkKey, aiChargeKey;
+            switch (aiCharacter) {
+              case "pirate":
+                aiSpriteKey = "piratePenguin";
+                aiWalkKey = "piratewalk";
+                aiChargeKey = "piratecharge";
+                break;
+              case "ninja":
+                aiSpriteKey = "ninjaPenguin";
+                aiWalkKey = "ninjawalk";
+                aiChargeKey = "ninjaroll";
+                break;
+              case "aviator":
+                aiSpriteKey = "aviatorPenguin";
+                aiWalkKey = "aviatorwalk";
+                aiChargeKey = "aviatorroll";
+                break;
+              case "viking":
+                aiSpriteKey = "vikingPenguin";
+                aiWalkKey = "vikingwalk";
+                aiChargeKey = "vikingroll";
+                break;
+              default:
+                aiSpriteKey = "pudgyPenguin";
+                aiWalkKey = "walk";
+                aiChargeKey = "charge";
+            }
+
+            const aiPenguin = this.physics.add
+              .sprite(x, y, aiSpriteKey)
+              .setScale(0.4);
+            aiPenguin.play(aiWalkKey);
+
+            // Store character info for this AI
+            aiPenguin.characterType = aiCharacter;
+            aiPenguin.walkKey = aiWalkKey;
+            aiPenguin.chargeKey = aiChargeKey;
+            const hue = Math.random();
+            const saturation = 0.4; // Low saturation for pastel
+            const value = 0.9; // Bright but soft
+            const originalTint = Phaser.Display.Color.HSVToRGB(
+              hue,
+              saturation,
+              value
+            ).color;
+            aiPenguin.originalTint = originalTint;
+            aiPenguin.setTint(originalTint);
+            aiPenguin.setCollideWorldBounds(false);
+            aiPenguin.body.setDrag(180);
+            aiPenguin.body.setBounce(0.3);
+
+            // Set custom hitbox size for tighter collision detection
+            aiPenguin.body.setSize(80, 80);
+
+            // AI gets faster and more aggressive each level
+            const levelMultiplier = 1 + (this.currentLevel - 1) * 0.04;
+            aiPenguin.levelMultiplier = levelMultiplier;
+            aiPenguin.body.setMaxVelocity(110 * levelMultiplier);
+            aiPenguin.knockbackMultiplier = 1.0;
+            aiPenguin.cooldownMultiplier = 1.0;
+
+            // AI properties - more aggressive each level
+            aiPenguin.aiState = "wander";
+            aiPenguin.aiTimer = Math.random() * 1000 + 500; // Faster decision making
+            aiPenguin.canCharge = true;
+            aiPenguin.aggressionLevel = Math.min(
+              0.35 + (this.currentLevel - 1) * 0.15,
+              0.95
+            );
+            aiPenguin.chargeRange = Math.min(
+              90 + (this.currentLevel - 1) * 20,
+              200
+            );
+            aiPenguin.wanderForce = 35 + Math.random() * 20;
+            aiPenguin.lastTarget = null; // Track what they're targeting
+            aiPenguin.desiredAccelX = 0;
+            aiPenguin.desiredAccelY = 0;
+            aiPenguin.lastKiller = null;
+
+            this.aiPenguins.add(aiPenguin);
+          }
+
+          // Re-setup collisions with new AIs
+          if (this.aiCollider) this.aiCollider.destroy();
+          if (this.playerAICollider) this.playerAICollider.destroy();
+
+          this.playerAICollider = this.physics.add.collider(
+            this.player,
+            this.aiPenguins,
+            this.handleCollision,
+            null,
+            this
+          );
+          this.aiCollider = this.physics.add.collider(
+            this.aiPenguins,
+            this.aiPenguins,
+            this.handleAICollision,
+            null,
+            this
+          );
+        }
+
+        pickupPowerup(penguin, powerup) {
+          if (!penguin.active || !powerup.active) return;
+
+          // Play powerup collection sound
+          playSound(this, "PowerupFx", { volume: 0.6 });
+
+          const type = powerup.type;
+          const duration = 10000;
+          const now = this.time.now;
+          let endTime;
+          switch (type) {
+            case 0: // speed
+              endTime = penguin.speedBoostEnd
+                ? Math.max(penguin.speedBoostEnd, now + duration)
+                : now + duration;
+              penguin.speedBoostEnd = endTime;
+              break;
+            case 1: // strength
+              endTime = penguin.knockbackEnd
+                ? Math.max(penguin.knockbackEnd, now + duration)
+                : now + duration;
+              penguin.knockbackEnd = endTime;
+              break;
+            case 2: // cooldown
+              endTime = penguin.cooldownEnd
+                ? Math.max(penguin.cooldownEnd, now + duration)
+                : now + duration;
+              penguin.cooldownEnd = endTime;
+              break;
+          }
+          penguin.activePowerupColor =
+            type === 0 ? 0x0000ff : type === 1 ? 0xff0000 : 0x00ff00;
+          if (penguin.glow) {
+            // Update all glow layers with the new color
+            penguin.glow.outer.setFillStyle(penguin.activePowerupColor, 0.1);
+            penguin.glow.middle.setFillStyle(penguin.activePowerupColor, 0.2);
+            penguin.glow.inner.setFillStyle(penguin.activePowerupColor, 0.3);
+          }
+
+          // Create powerup collection particles
+          this.createParticleExplosion(
+            powerup.x,
+            powerup.y,
+            penguin.activePowerupColor,
+            8,
+            50,
+            100,
+            1000
+          );
+
+          // Update powerup text immediately with new powerup type
+          this.updatePowerupText(penguin);
+          powerup.destroy();
+          this.powerups.remove(powerup);
+        }
+
+        updateBoosts() {
+          const now = this.time.now;
+          const updateEntityBoosts = (entity, baseMaxVel) => {
+            // speed
+            let speedMult = 1.0;
+            if (entity.speedBoostEnd && now < entity.speedBoostEnd) {
+              speedMult = 1.5;
+            } else if (entity.speedBoostEnd) {
+              delete entity.speedBoostEnd;
+            }
+            entity.body.setMaxVelocity(speedMult * baseMaxVel);
+            // knockback
+            if (entity.knockbackEnd && now < entity.knockbackEnd) {
+              entity.knockbackMultiplier = 1.5;
+            } else {
+              entity.knockbackMultiplier = 1.0;
+              if (entity.knockbackEnd) delete entity.knockbackEnd;
+            }
+            // cooldown
+            if (entity.cooldownEnd && now < entity.cooldownEnd) {
+              entity.cooldownMultiplier = 0.5;
+            } else {
+              entity.cooldownMultiplier = 1.0;
+              if (entity.cooldownEnd) delete entity.cooldownEnd;
+            }
+          };
+          // player
+          if (this.player.active) {
+            updateEntityBoosts(this.player, 200);
+            this.updateGlow(this.player);
+          }
+          // AIs
+          this.aiPenguins.getChildren().forEach((ai) => {
+            if (ai.active) {
+              const baseVel = 150 * (ai.levelMultiplier || 1);
+              updateEntityBoosts(ai, baseVel);
+              this.updateGlow(ai);
+            }
+          });
+        }
+
+        setupTouchControls() {
+          this.createMobileController();
+        }
+
+        createMobileController() {
+          // Create simple joystick (bottom left)
+          this.createSimpleJoystick();
+
+          // Create roll button (bottom right)
+          this.createRollButton();
+        }
+
+        createSimpleJoystick() {
+          this.input.addPointer(2);
+          const joystickSize = 60;
+          const knobSize = 25;
+          const joystickX = 90;
+          const joystickY = this.sys.game.config.height - 90;
+
+          // Joystick base (outer circle)
+          this.joystickBase = this.add
+            .circle(joystickX, joystickY, joystickSize, 0x000000, 0.3)
+            .setDepth(70)
+            .setStrokeStyle(4, 0xffffff, 0.8)
+            .setInteractive({ useHandCursor: false });
+
+          // Joystick knob (inner circle)
+          this.joystickKnob = this.add
+            .circle(joystickX, joystickY, knobSize, 0xffffff, 0.9)
+            .setDepth(71)
+            .setStrokeStyle(3, 0x000000, 0.6)
+            .setInteractive({ useHandCursor: false });
+
+          // Store joystick properties
+          this.joystick = {
+            base: this.joystickBase,
+            knob: this.joystickKnob,
+            centerX: joystickX,
+            centerY: joystickY,
+            maxDistance: joystickSize - knobSize - 5, // Visual constraint for knob
+            isActive: false,
+            activePointer: null,
+          };
+
+          // Track joystick input (like keyboard isDown) - binary states
+          this.mobileInput = {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+          };
+
+          // Joystick input handling
+          this.joystickBase.on("pointerdown", (pointer) => {
+            this.joystick.isActive = true;
+            this.joystick.activePointer = pointer;
+            this.updateJoystickInput(pointer);
+          });
+
+          this.joystickBase.on("pointerup", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.joystick.isActive = false;
+              this.joystick.activePointer = null;
+              this.resetJoystickInput();
+            }
+          });
+
+          this.joystickBase.on("pointermove", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.updateJoystickInput(pointer);
+            }
+          });
+
+          // Also handle knob events for better touch response
+          this.joystickKnob.on("pointerdown", (pointer) => {
+            this.joystick.isActive = true;
+            this.joystick.activePointer = pointer;
+            this.updateJoystickInput(pointer);
+          });
+
+          this.joystickKnob.on("pointerup", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.joystick.isActive = false;
+              this.joystick.activePointer = null;
+              this.resetJoystickInput();
+            }
+          });
+
+          this.joystickKnob.on("pointermove", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.updateJoystickInput(pointer);
+            }
+          });
+
+          // Global pointerup to handle finger lifted outside joystick area
+          this.input.on("pointerup", (pointer) => {
+            if (
+              this.joystick.isActive &&
+              this.joystick.activePointer === pointer
+            ) {
+              this.joystick.isActive = false;
+              this.joystick.activePointer = null;
+              this.resetJoystickInput();
+            }
+          });
+        }
+
+        updateJoystickInput(pointer) {
+          const deltaX = pointer.x - this.joystick.centerX;
+          const deltaY = pointer.y - this.joystick.centerY;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+          // Reset all directions first
+          this.mobileInput.up = false;
+          this.mobileInput.down = false;
+          this.mobileInput.left = false;
+          this.mobileInput.right = false;
+
+          // Only set directions if we're far enough from center (like pressing a key)
+          if (distance > 15) {
+            // Dead zone - must move at least 15 pixels from center
+            // Allow diagonal movement by checking each axis independently
+
+            // Horizontal movement
+            if (Math.abs(deltaX) > 15) {
+              if (deltaX < 0) {
+                this.mobileInput.left = true; // Like pressing left arrow key
+              } else {
+                this.mobileInput.right = true; // Like pressing right arrow key
+              }
+            }
+
+            // Vertical movement (can be combined with horizontal for diagonals)
+            if (Math.abs(deltaY) > 15) {
+              if (deltaY < 0) {
+                this.mobileInput.up = true; // Like pressing up arrow key
+              } else {
+                this.mobileInput.down = true; // Like pressing down arrow key
+              }
+            }
+          }
+
+          // Update knob position (constrained to joystick area)
+          if (distance <= this.joystick.maxDistance) {
+            this.joystick.knob.setPosition(pointer.x, pointer.y);
+          } else {
+            const angle = Math.atan2(deltaY, deltaX);
+            const constrainedX =
+              this.joystick.centerX +
+              Math.cos(angle) * this.joystick.maxDistance;
+            const constrainedY =
+              this.joystick.centerY +
+              Math.sin(angle) * this.joystick.maxDistance;
+            this.joystick.knob.setPosition(constrainedX, constrainedY);
+          }
+        }
+
+        resetJoystickInput() {
+          // Reset all directions (like releasing all keys)
+          this.mobileInput.up = false;
+          this.mobileInput.down = false;
+          this.mobileInput.left = false;
+          this.mobileInput.right = false;
+
+          // Smooth return to center
+          this.tweens.add({
+            targets: this.joystick.knob,
+            x: this.joystick.centerX,
+            y: this.joystick.centerY,
+            duration: 200,
+            ease: "Back.easeOut",
+          });
+        }
+
+        createRollButton() {
+          const buttonSize = 45; // Increased to match joystick size
+          const buttonX = this.sys.game.config.width - 80; // Moved slightly inward
+          const buttonY = this.sys.game.config.height - 80;
+
+          // Roll button base
+          this.rollButton = this.add
+            .circle(buttonX, buttonY, buttonSize, 0xff8b8b, 0.9)
+            .setDepth(70)
+            .setStrokeStyle(4, 0xffffff, 0.8)
+            .setInteractive();
+
+          // Roll button text
+          this.rollButtonText = this.add
+            .text(buttonX, buttonY, "DASH", {
+              fontFamily: "Fobble",
+              fontSize: "24px", // Increased to match larger button
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setDepth(71);
+
+          // Button press animation
+          this.rollButton.on("pointerdown", (pointer) => {
+            this.rollButton.setScale(0.9);
+            this.rollButtonText.setScale(0.9);
+            this.playerCharge();
+          });
+
+          this.rollButton.on("pointerup", (pointer) => {
+            this.rollButton.setScale(1);
+            this.rollButtonText.setScale(1);
+          });
+
+          // Add subtle pulsing animation
+          this.tweens.add({
+            targets: this.rollButton,
+            scale: 1.05,
+            duration: 1500,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+          });
+        }
+
+        updateJoystickPosition(pointer) {
+          const deltaX = pointer.x - this.joystick.centerX;
+          const deltaY = pointer.y - this.joystick.centerY;
+          const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+
+          // Calculate movement using distance-based approach for proper sensitivity
+          // This gives full acceleration when moving beyond the small movementRange
+          if (distance === 0) {
+            // No movement if at center
+            this.movePlayerJoystick(0, 0);
+            return;
+          }
+
+          const movementMagnitude = Math.min(
+            1,
+            distance / this.joystick.movementRange
+          );
+          const normalizedX = (deltaX / distance) * movementMagnitude;
+          const normalizedY = (deltaY / distance) * movementMagnitude;
+
+          // Apply movement with full range based on touch position
+          this.movePlayerJoystick(normalizedX, normalizedY);
+
+          // Then update knob position (constrained to joystick area for visual feedback)
+          if (distance <= this.joystick.maxDistance) {
+            // Within joystick range
+            this.joystick.knob.setPosition(pointer.x, pointer.y);
+          } else {
+            // Constrain to joystick edge
+            const angle = Math.atan2(deltaY, deltaX);
+            const constrainedX =
+              this.joystick.centerX +
+              Math.cos(angle) * this.joystick.maxDistance;
+            const constrainedY =
+              this.joystick.centerY +
+              Math.sin(angle) * this.joystick.maxDistance;
+            this.joystick.knob.setPosition(constrainedX, constrainedY);
+          }
+        }
+
+        resetJoystick() {
+          // Smooth return to center
+          this.tweens.add({
+            targets: this.joystick.knob,
+            x: this.joystick.centerX,
+            y: this.joystick.centerY,
+            duration: 200,
+            ease: "Back.easeOut",
+          });
+
+          // Stop acceleration when joystick is released (like keyboard)
+          if (this.player && this.player.active) {
+            this.player.body.setAcceleration(0, 0);
+          }
+        }
+
+        movePlayerJoystick(normalizedX, normalizedY) {
+          if (!this.player || !this.player.active || !this.gameRunning) return;
+
+          // Use same acceleration as keyboard for consistent behavior
+          const acceleration = 110; // Same as keyboard for identical physics
+          const accelX = normalizedX * acceleration;
+          const accelY = normalizedY * acceleration;
+
+          // Apply acceleration instead of direct velocity for slippery ice physics
+          this.setCappedAcceleration(this.player, accelX, accelY, 120);
+        }
+
+        movePlayerTouch(deltaX, deltaY) {
+          if (!this.gameRunning || !this.player.active) return;
+
+          const force = 110;
+          const normalizedX = Math.max(-1, Math.min(1, deltaX / 50));
+          const normalizedY = Math.max(-1, Math.min(1, deltaY / 50));
+
+          this.setCappedAcceleration(
+            this.player,
+            normalizedX * force,
+            normalizedY * force,
+            120
+          );
+        }
+
+        update(time, delta) {
+          if (!this.gameRunning) return;
+
+          this.updateBoosts();
+          this.handlePlayerInput();
+          this.updatePlayerFlip();
+          this.updateAIPenguins();
+          this.updateAIFlips();
+          this.checkBounds();
+          this.updateUI();
+
+          // Update snowflakes
+          this.snowflakes.children.each((flake) => {
+            flake.y += flake.speedY * (delta / 1000);
+            flake.x += Math.sin(delta / 5000) * flake.driftX * 500; // wavy cosy drift
+
+            // Destroy off-screen flakes
+            if (flake.y > this.sys.game.config.height + 10) {
+              flake.destroy();
+            }
+          });
+        }
+
+        updatePlayerFlip() {
+          if (!this.player.active) return;
+
+          if (this.player.body.velocity.x > 2) {
+            this.player.flipX = false;
+          } else if (this.player.body.velocity.x < -2) {
+            this.player.flipX = true;
+          }
+
+          // Character sprite is handled automatically by Phaser
+        }
+
+        updateAIFlips() {
+          this.aiPenguins.getChildren().forEach((ai) => {
+            if (!ai.active) return;
+
+            if (ai.body.velocity.x > 2) {
+              ai.flipX = false;
+            } else if (ai.body.velocity.x < -2) {
+              ai.flipX = true;
+            }
+          });
+        }
+
+        handlePlayerInput() {
+          if (!this.player.active) return;
+
+          // Safety check - ensure input system is ready
+          if (!this.input || !this.input.keyboard) return;
+
+          const acceleration = 100;
+          let accelX = 0;
+          let accelY = 0;
+
+          // Keyboard controls
+          if (
+            (this.cursors && this.cursors.left.isDown) ||
+            (this.wasd && this.wasd.A.isDown) ||
+            (this.mobileInput && this.mobileInput.left)
+          )
+            accelX = -acceleration;
+          if (
+            (this.cursors && this.cursors.right.isDown) ||
+            (this.wasd && this.wasd.D.isDown) ||
+            (this.mobileInput && this.mobileInput.right)
+          )
+            accelX = acceleration;
+          if (
+            (this.cursors && this.cursors.up.isDown) ||
+            (this.wasd && this.wasd.W.isDown) ||
+            (this.mobileInput && this.mobileInput.up)
+          )
+            accelY = -acceleration;
+          if (
+            (this.cursors && this.cursors.down.isDown) ||
+            (this.wasd && this.wasd.S.isDown) ||
+            (this.mobileInput && this.mobileInput.down)
+          )
+            accelY = acceleration;
+
+          this.setCappedAcceleration(this.player, accelX, accelY, 120);
+
+          // Charge ability
+          if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            this.playerCharge();
+          }
+        }
+
+        playerCharge() {
+          if (!this.playerCanCharge || !this.player.active) return;
+
+          window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+
+          // Play dash/charge sound
+          playSound(this, "WooshFx", { volume: 0.1 });
+
+          this.isCharging = true;
+          this.playerCanCharge = false;
+
+          // Smoothly dim the roll button to show it's on cooldown
+          if (this.rollButton) {
+            this.tweens.add({
+              targets: [this.rollButton, this.rollButtonText],
+              alpha: 0.4,
+              duration: 200,
+              ease: "Power2.easeOut",
+            });
+          }
+
+          this.player.play(this.getCharacterChargeKey());
+
+          // Get direction player is moving
+          let chargeX = this.player.body.velocity.x;
+          let chargeY = this.player.body.velocity.y;
+
+          if (Math.abs(chargeX) < 10 && Math.abs(chargeY) < 10) {
+            // If not moving, don't charge in any direction
+            // Player stays in charge state for knockback resistance but doesn't move
+            chargeX = 0;
+            chargeY = 0;
+          } else {
+            // Normalize and multiply by charge force
+            const magnitude = Math.sqrt(chargeX * chargeX + chargeY * chargeY);
+            chargeX = (chargeX / magnitude) * this.chargeForce;
+            chargeY = (chargeY / magnitude) * this.chargeForce;
+          }
+
+          this.player.body.setVelocity(chargeX, chargeY);
+
+          // Cooldown
+          this.time.delayedCall(800 * this.player.cooldownMultiplier, () => {
+            this.playerCanCharge = true;
+            this.isCharging = false;
+
+            // Smoothly restore roll button alpha when cooldown ends
+            if (this.rollButton) {
+              this.tweens.add({
+                targets: [this.rollButton, this.rollButtonText],
+                alpha: 1,
+                duration: 300,
+                ease: "Back.easeOut",
+              });
+            }
+
+            if (this.player.active) {
+              this.player.play(this.getCharacterWalkKey());
+              // Cap velocity to normal movement speed instead of stopping completely
+              const currentVelX = this.player.body.velocity.x;
+              const currentVelY = this.player.body.velocity.y;
+              const magnitude = Math.sqrt(
+                currentVelX * currentVelX + currentVelY * currentVelY
+              );
+              const maxNormalSpeed = 50; // Normal movement speed limit
+
+              if (magnitude > maxNormalSpeed) {
+                const scale = maxNormalSpeed / magnitude;
+                this.player.body.setVelocity(
+                  currentVelX * scale,
+                  currentVelY * scale
+                );
+              }
+            }
+          });
+        }
+
+        updateAIPenguins() {
+          this.aiPenguins.getChildren().forEach((ai) => {
+            if (!ai.active) return;
+
+            ai.aiTimer -= this.game.loop.delta;
+
+            let totalX = ai.desiredAccelX || 0;
+            let totalY = ai.desiredAccelY || 0;
+
+            if (ai.aiTimer <= 0 && ai.aiState !== "charging") {
+              ai.aiTimer = 800 + Math.random() * 1200; // Faster decision cycles
+
+              // Check for powerups
+              const activePowerups = this.powerups
+                .getChildren()
+                .filter((pu) => pu.active);
+              let bestPU = null;
+              let closestPUDist = Infinity;
+              if (activePowerups.length > 0 && Math.random() < 0.3) {
+                activePowerups.forEach((pu) => {
+                  const dist = Phaser.Math.Distance.Between(
+                    ai.x,
+                    ai.y,
+                    pu.x,
+                    pu.y
+                  );
+                  if (dist < ai.chargeRange * 0.8 && dist < closestPUDist) {
+                    closestPUDist = dist;
+                    bestPU = pu;
+                  }
+                });
+              }
+              if (bestPU) {
+                this.aiMoveTo(ai, bestPU.x, bestPU.y);
+                return;
+              }
+
+              // Find all potential targets (player + other AIs)
+              const targets = [
+                this.player,
+                ...this.aiPenguins
+                  .getChildren()
+                  .filter((other) => other !== ai && other.active),
+              ];
+              let bestTarget = null;
+              let closestDistance = Infinity;
+
+              // Find the closest target within range
+              targets.forEach((target) => {
+                const distance = Phaser.Math.Distance.Between(
+                  ai.x,
+                  ai.y,
+                  target.x,
+                  target.y
+                );
+                if (distance < ai.chargeRange && distance < closestDistance) {
+                  closestDistance = distance;
+                  bestTarget = target;
+                }
+              });
+
+              // Decide action based on aggression and targets
+              const actionRoll = Math.random();
+
+              if (
+                bestTarget &&
+                ai.canCharge &&
+                actionRoll < ai.aggressionLevel
+              ) {
+                // Attack the closest target
+                this.aiChargeAtTarget(ai, bestTarget);
+              } else if (actionRoll < ai.aggressionLevel + 0.3) {
+                // Move aggressively toward center or player
+                this.aiAggressiveMove(ai);
+              } else {
+                // Wander around more actively
+                this.aiActiveWander(ai);
+              }
+            }
+
+            // Edge avoidance
+            const dist = Phaser.Math.Distance.Between(
+              ai.x,
+              ai.y,
+              this.centerX,
+              this.centerY
+            );
+            if (dist > this.iceRadius - this.edgeBuffer) {
+              const dx = this.centerX - ai.x;
+              const dy = this.centerY - ai.y;
+              const mag = Math.sqrt(dx * dx + dy * dy);
+              if (mag > 0) {
+                const ratio =
+                  (dist - (this.iceRadius - this.edgeBuffer)) / this.edgeBuffer;
+                const avoidanceForce = 150 + ratio * 250;
+                const avoidanceX = (dx / mag) * avoidanceForce;
+                const avoidanceY = (dy / mag) * avoidanceForce;
+                totalX += avoidanceX;
+                totalY += avoidanceY;
+              }
+            }
+
+            this.setCappedAcceleration(ai, totalX, totalY, 100);
+          });
+        }
+
+        aiMoveTo(ai, targetX, targetY) {
+          const angle = Phaser.Math.Angle.Between(ai.x, ai.y, targetX, targetY);
+          const force = ai.wanderForce * 1.2;
+          ai.desiredAccelX = Math.cos(angle) * force;
+          ai.desiredAccelY = Math.sin(angle) * force;
+          this.time.delayedCall(1000, () => {
+            if (ai.active) {
+              ai.desiredAccelX = 0;
+              ai.desiredAccelY = 0;
+            }
+          });
+        }
+
+        updateAIBehavior() {
+          // This is called periodically, but updateAIPenguins is called every frame now
+          this.updateAIPenguins();
+        }
+
+        startLevelZoomEffect() {
+          // Start zoomed in on player
+          this.cameras.main.setZoom(2.0);
+          this.cameras.main.centerOn(
+            this.sys.game.config.width / 2,
+            this.sys.game.config.height / 2
+          );
+
+          // Create "GO!" text
+          const goText = this.add.text(this.centerX, this.centerY, "FIGHT!", {
+            fontFamily: "Fobble",
+            fontSize: "64px",
+            fill: "#ffffff",
+            stroke: "#000000",
+            strokeThickness: 6,
+            align: "center",
+          });
+          goText.setOrigin(0.5);
+          goText.setDepth(60);
+          goText.setScale(0);
+          goText.setAlpha(0);
+
+          // Animate "GO!" text appearance
+          this.tweens.add({
+            targets: goText,
+            scale: 1.2,
+            alpha: 1,
+            duration: 400,
+            ease: "Back.easeOut",
+            onComplete: () => {
+              // Scale down to normal size
+              this.tweens.add({
+                targets: goText,
+                scale: 1.0,
+                duration: 200,
+                ease: "Power2.easeOut",
+              });
+            },
+          });
+
+          // Zoom out camera over 500ms
+          this.tweens.add({
+            targets: this.cameras.main,
+            zoom: 1.0,
+            duration: 400,
+            ease: "Power2.easeOut",
+            onComplete: () => {
+              // Fade out "GO!" text after zoom completes
+              this.tweens.add({
+                targets: goText,
+                alpha: 0,
+                scale: 0.8,
+                duration: 200,
+                ease: "Power2.easeOut",
+                onComplete: () => {
+                  goText.destroy();
+                },
+              });
+            },
+          });
+        }
+
+        aiChargeAtTarget(ai, target) {
+          if (!ai.canCharge) return;
+
+          // Play dash/charge sound for AI
+          playSound(this, "WooshFx", { volume: 0.05 });
+
+          ai.desiredAccelX = 0;
+          ai.desiredAccelY = 0;
+          ai.canCharge = false;
+          ai.aiState = "charging";
+          ai.lastTarget = target;
+          ai.play(ai.chargeKey);
+          ai.setTint(ai.originalTint);
+          const angle = Phaser.Math.Angle.Between(
+            ai.x,
+            ai.y,
+            target.x,
+            target.y
+          );
+          // AI charge gets stronger each level
+          const levelMultiplier = 1 + (this.currentLevel - 1) * 0.08;
+          const chargeStrength = target === this.player ? 0.9 : 0.7; // Slightly weaker vs other AIs
+          const chargeX =
+            Math.cos(angle) *
+            this.chargeForce *
+            chargeStrength *
+            levelMultiplier;
+          const chargeY =
+            Math.sin(angle) *
+            this.chargeForce *
+            chargeStrength *
+            levelMultiplier;
+
+          ai.body.setVelocity(chargeX, chargeY);
+
+          // Shorter cooldown for higher levels (more aggressive)
+          const cooldown =
+            Math.max(1000, 1800 - (this.currentLevel - 1) * 100) *
+            ai.cooldownMultiplier;
+          this.time.delayedCall(cooldown, () => {
+            ai.canCharge = true;
+            ai.aiState = "wander";
+            if (ai.active) {
+              ai.play(ai.walkKey);
+              ai.setTint(ai.originalTint);
+            }
+          });
+        }
+
+        aiAggressiveMove(ai) {
+          // Move toward the center of action or player
+          let targetX, targetY;
+
+          if (Math.random() < 0.7) {
+            // Move toward player
+            targetX = this.player.x;
+            targetY = this.player.y;
+          } else {
+            // Move toward center
+            targetX = this.centerX;
+            targetY = this.centerY;
+          }
+
+          const angle = Phaser.Math.Angle.Between(ai.x, ai.y, targetX, targetY);
+          const force = ai.wanderForce * 1.5; // Stronger movement
+          const accelX = Math.cos(angle) * force;
+          const accelY = Math.sin(angle) * force;
+
+          ai.desiredAccelX = accelX;
+          ai.desiredAccelY = accelY;
+
+          this.time.delayedCall(800, () => {
+            if (ai.active) {
+              ai.desiredAccelX = 0;
+              ai.desiredAccelY = 0;
+            }
+          });
+        }
+
+        aiActiveWander(ai) {
+          // More dynamic wandering - sometimes move toward edges, sometimes toward center
+          let targetX, targetY;
+
+          if (Math.random() < 0.3) {
+            // Move toward a random other AI for potential conflict
+            const otherAIs = this.aiPenguins
+              .getChildren()
+              .filter((other) => other !== ai && other.active);
+            if (otherAIs.length > 0) {
+              const randomAI =
+                otherAIs[Math.floor(Math.random() * otherAIs.length)];
+              targetX = randomAI.x;
+              targetY = randomAI.y;
+            } else {
+              // Fallback to random movement
+              const angle = Math.random() * Math.PI * 2;
+              const distance = 80 + Math.random() * 100;
+              targetX = ai.x + Math.cos(angle) * distance;
+              targetY = ai.y + Math.sin(angle) * distance;
+            }
+          } else {
+            // Random movement with bias toward staying on ice
+            const angle = Math.random() * Math.PI * 2;
+            const distance = 60 + Math.random() * 120;
+            targetX = this.centerX + Math.cos(angle) * distance;
+            targetY = this.centerY + Math.sin(angle) * distance;
+          }
+
+          const angleToTarget = Phaser.Math.Angle.Between(
+            ai.x,
+            ai.y,
+            targetX,
+            targetY
+          );
+          const force = ai.wanderForce;
+          const accelX = Math.cos(angleToTarget) * force;
+          const accelY = Math.sin(angleToTarget) * force;
+
+          ai.desiredAccelX = accelX;
+          ai.desiredAccelY = accelY;
+
+          this.time.delayedCall(600, () => {
+            if (ai.active) {
+              ai.desiredAccelX = 0;
+              ai.desiredAccelY = 0;
+            }
+          });
+        }
+
+        handleCollision(player, ai) {
+          window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+
+          // Play hit sound with random pitch variation
+          const pitch = Phaser.Math.FloatBetween(0.8, 1.2);
+          playSound(this, "HitFx", { volume: 0.5, detune: (pitch - 1) * 1200 });
+
+          ai.lastKiller = player;
+
+          const baseKnockbackForce = 180;
+          const playerStrength = player.knockbackMultiplier;
+          const aiStrength = ai.knockbackMultiplier;
+
+          // Calculate knockback direction
+          const angle = Phaser.Math.Angle.Between(
+            player.x,
+            player.y,
+            ai.x,
+            ai.y
+          );
+          const cos = Math.cos(angle);
+          const sin = Math.sin(angle);
+
+          let aiKnockbackForce = baseKnockbackForce * playerStrength;
+          if (!this.isCharging) {
+            aiKnockbackForce *= 0.9;
+          }
+
+          ai.body.setVelocity(cos * aiKnockbackForce, sin * aiKnockbackForce);
+
+          // Player knockback - stronger if AI is charging and player is not
+          let playerKnockbackMultiplier = 1.0;
+          if (ai.aiState === "charging" && !this.isCharging) {
+            playerKnockbackMultiplier = 0.6;
+          }
+
+          // Boost knockback if player is standing still (low velocity)
+          const playerVelocity = Math.sqrt(
+            player.body.velocity.x * player.body.velocity.x +
+              player.body.velocity.y * player.body.velocity.y
+          );
+          if (playerVelocity < 10) {
+            playerKnockbackMultiplier *= 1.2; // 20% boost for standing still
+          }
+
+          player.body.setVelocity(
+            -cos * baseKnockbackForce * playerKnockbackMultiplier * aiStrength,
+            -sin * baseKnockbackForce * playerKnockbackMultiplier * aiStrength
+          );
+
+          // Screen shake
+          this.cameras.main.shake(100, 0.01);
+        }
+
+        handleAICollision(ai1, ai2) {
+          // Play hit sound with random pitch variation
+          const pitch = Phaser.Math.FloatBetween(0.8, 1.2);
+          playSound(this, "HitFx", { volume: 0.4, detune: (pitch - 1) * 1200 });
+
+          ai1.lastKiller = ai2;
+          ai2.lastKiller = ai1;
+
+          const baseKnockbackForce = 150;
+
+          const angle = Phaser.Math.Angle.Between(ai1.x, ai1.y, ai2.x, ai2.y);
+          const cos = Math.cos(angle);
+          const sin = Math.sin(angle);
+          const oppCos = Math.cos(angle + Math.PI);
+          const oppSin = Math.sin(angle + Math.PI);
+
+          ai2.body.setVelocity(
+            cos * baseKnockbackForce * ai1.knockbackMultiplier,
+            sin * baseKnockbackForce * ai1.knockbackMultiplier
+          );
+          ai1.body.setVelocity(
+            oppCos * baseKnockbackForce * ai2.knockbackMultiplier,
+            oppSin * baseKnockbackForce * ai2.knockbackMultiplier
+          );
+
+          // Small screen shake for AI battles
+          this.cameras.main.shake(50, 0.005);
+
+          // Make them more aggressive after collision
+          ai1.aiTimer = Math.min(ai1.aiTimer, 300);
+          ai2.aiTimer = Math.min(ai2.aiTimer, 300);
+        }
+
+        checkBounds() {
+          const centerDistance = (sprite) => {
+            return Phaser.Math.Distance.Between(
+              sprite.x,
+              sprite.y,
+              this.centerX,
+              this.centerY
+            );
+          };
+
+          // Check player - if they go beyond ice radius, game over
+          if (
+            this.player.active &&
+            centerDistance(this.player) > this.iceRadius - 15
+          ) {
+            // Play splash sound with random pitch variation
+            const pitch = Phaser.Math.FloatBetween(0.9, 1.1);
+            playSound(this, "SplashFx", {
+              volume: 0.6,
+              detune: (pitch - 1) * 1200,
+            });
+            this.gameOver();
+          }
+
+          // Check AI penguins - if they go beyond ice radius, they fall off
+          const toRemove = this.aiPenguins
+            .getChildren()
+            .filter(
+              (ai) => ai.active && centerDistance(ai) > this.iceRadius - 15
+            );
+          toRemove.forEach((ai) => {
+            const fallX = ai.x;
+            const fallY = ai.y;
+            const angle = Phaser.Math.Angle.Between(
+              this.centerX,
+              this.centerY,
+              fallX,
+              fallY
+            );
+            const edgeX =
+              this.centerX + Math.cos(angle) * (this.iceRadius - 20);
+            const edgeY =
+              this.centerY + Math.sin(angle) * (this.iceRadius - 20);
+
+            if (ai.lastKiller === this.player) {
+              this.score += 10;
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            }
+
+            // Play splash sound when penguin falls with random pitch variation
+            const pitch = Phaser.Math.FloatBetween(0.9, 1.1);
+            playSound(this, "SplashFx", {
+              volume: 0.6,
+              detune: (pitch - 1) * 1200,
+            });
+
+            if (ai.glow) {
+              ai.glow.outer.destroy();
+              ai.glow.middle.destroy();
+              ai.glow.inner.destroy();
+              delete ai.glow;
+            }
+
+            if (ai.powerupText) {
+              ai.powerupText.destroy();
+              delete ai.powerupText;
+            }
+
+            ai.destroy();
+
+            // Particle effect at the edge where they fell
+            this.createSplashEffect(edgeX, edgeY);
+          });
+
+          // Check win condition - if no AIs left, complete level
+          const activeAI = this.aiPenguins
+            .getChildren()
+            .filter((ai) => ai.active).length;
+          if (activeAI === 0 && !this.levelTransitioning) {
+            this.completeLevel();
+          }
+        }
+
+        createSplashEffect(x, y) {
+          // Create celebration particles for splash
+          this.createParticleExplosion(x, y, 0x87ceeb, 12, 100, 200, 2000);
+
+          // Create multiple splash particles
+          for (let i = 0; i < 8; i++) {
+            const splash = this.add.circle(
+              x + (Math.random() - 0.5) * 40,
+              y + (Math.random() - 0.5) * 40,
+              5 + Math.random() * 10,
+              0x87ceeb,
+              0.8
+            );
+            this.tweens.add({
+              targets: splash,
+              scaleX: 0,
+              scaleY: 0,
+              alpha: 0,
+              duration: 300 + Math.random() * 200,
+              onComplete: () => splash.destroy(),
+            });
+          }
+        }
+
+        createParticleExplosion(
+          x,
+          y,
+          color,
+          count,
+          minSpeed,
+          maxSpeed,
+          lifespan
+        ) {
+          for (let i = 0; i < count; i++) {
+            const particle = this.add.circle(
+              x,
+              y,
+              3 + Math.random() * 4,
+              color,
+              0.8
+            );
+            particle.setDepth(60);
+
+            // Random direction
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Phaser.Math.FloatBetween(minSpeed, maxSpeed);
+            const velocityX = Math.cos(angle) * speed;
+            const velocityY = Math.sin(angle) * speed;
+
+            // Animate particle
+            this.tweens.add({
+              targets: particle,
+              x: particle.x + velocityX,
+              y: particle.y + velocityY,
+              scaleX: 0,
+              scaleY: 0,
+              alpha: 0,
+              duration: lifespan,
+              ease: "Power2.easeOut",
+              onComplete: () => particle.destroy(),
+            });
+          }
+        }
+
+        setCappedAcceleration(entity, accelX, accelY, maxAcceleration = 150) {
+          // Cap acceleration to prevent excessive speed buildup
+          const magnitude = Math.sqrt(accelX * accelX + accelY * accelY);
+          if (magnitude > maxAcceleration) {
+            const scale = maxAcceleration / magnitude;
+            accelX *= scale;
+            accelY *= scale;
+          }
+          entity.body.setAcceleration(accelX, accelY);
+        }
+
+        updateUI() {
+          document.getElementById("score").textContent = this.score;
+          document.getElementById("level").textContent = this.currentLevel;
+        }
+
+        gameOver() {
+          this.gameRunning = false;
+
+          // Stop level music
+          if (this.levelMusic) {
+            this.levelMusic.stop();
+          }
+
+          // Play fail sound
+          playSound(this, "FailFx", { volume: 0.4 });
+
+          // Screen shake for player death
+          this.cameras.main.shake(200, 0.02);
+          window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+          if (this.player) {
+            this.player.setActive(false).setVisible(false);
+          }
+
+          // Save progress
+          gameData.totalScore = 0; // Set total score to current score
+          gameData.saveGameState();
+          gameData.saveHighestLevel(this.currentLevel);
+
+          // Submit current score
+          window.FarcadeSDK.singlePlayer.actions.gameOver({
+            score: this.score,
+          });
+
+          // Reset score for next game
+          this.score = 0;
+
+          this.scene.start("HubScene");
+        }
+
+        unlockCharactersBasedOnPerformance() {
+          // Unlock characters based on level reached
+          if (this.currentLevel >= 2) {
+            gameData.unlockCharacter("pirate");
+          }
+          if (this.currentLevel >= 3) {
+            gameData.unlockCharacter("aviator");
+          }
+          if (this.currentLevel >= 4) {
+            gameData.unlockCharacter("viking");
+          }
+          if (this.currentLevel >= 5) {
+            gameData.unlockCharacter("ninja");
+          }
+        }
+
+        completeLevel() {
+          if (this.levelTransitioning) return; // Prevent multiple calls
+
+          this.levelTransitioning = true;
+          this.score += 25 * this.currentLevel; // Level bonus
+
+          // Check what will be unlocked before actually unlocking
+          const newlyUnlockedCharacters = this.checkNewUnlocks();
+
+          // Now actually unlock the characters
+          this.unlockCharactersBasedOnPerformance();
+
+          // If we unlocked new characters, switch to the latest one for next level
+          if (newlyUnlockedCharacters.length > 0) {
+            this.selectedCharacter = this.getLatestUnlockedCharacter();
+            gameData.saveCurrentCharacter(this.selectedCharacter);
+          }
+
+          // Unlock next level
+          const nextLevel = this.currentLevel + 1;
+          if (nextLevel > gameData.highestLevel) {
+            gameData.saveHighestLevel(nextLevel);
+          }
+
+          // Save progress
+          gameData.totalScore = this.score; // Set total score to current score
+          gameData.saveGameState();
+
+          // Show completion screen
+          this.showLevelCompletion(newlyUnlockedCharacters, nextLevel);
+        }
+
+        checkNewUnlocks() {
+          const newlyUnlockedCharacters = [];
+
+          // Check each unlock condition
+          if (
+            this.currentLevel >= 2 &&
+            !gameData.unlockedCharacters.includes("pirate")
+          ) {
+            newlyUnlockedCharacters.push("pirate");
+          }
+          if (
+            this.currentLevel >= 3 &&
+            !gameData.unlockedCharacters.includes("aviator")
+          ) {
+            newlyUnlockedCharacters.push("aviator");
+          }
+          if (
+            this.currentLevel >= 4 &&
+            !gameData.unlockedCharacters.includes("viking")
+          ) {
+            newlyUnlockedCharacters.push("viking");
+          }
+          if (
+            this.currentLevel >= 5 &&
+            !gameData.unlockedCharacters.includes("ninja")
+          ) {
+            newlyUnlockedCharacters.push("ninja");
+          }
+
+          return newlyUnlockedCharacters;
+        }
+
+        showLevelCompletion(newlyUnlockedCharacters, nextLevel) {
+          // Create starburst effect
+          this.player.destroy();
+
+          // Create expanding blue circle
+          const expandingCircle = this.add.circle(
+            this.centerX,
+            this.centerY,
+            1,
+            0x477dfd,
+            1
+          );
+          expandingCircle.setDepth(80);
+
+          // Animate circle expansion
+          this.tweens.add({
+            targets: expandingCircle,
+            radius:
+              Math.max(
+                this.sys.game.config.width,
+                this.sys.game.config.height
+              ) * 0.8,
+            duration: 600,
+            ease: "Power2.easeOut",
+            onComplete: () => {
+              // Check if we have newly unlocked characters
+              if (
+                newlyUnlockedCharacters &&
+                newlyUnlockedCharacters.length > 0
+              ) {
+                // Show new character walking instead of winner
+                this.showNewCharacterUnlock(newlyUnlockedCharacters, nextLevel);
+              } else {
+                // Show normal winner animation
+                this.showWinnerAnimation(nextLevel);
+              }
+            },
+          });
+        }
+
+        showNewCharacterUnlock(newlyUnlockedCharacters, nextLevel) {
+          // Fade out level music and play victory music
+          if (this.levelMusic) {
+            this.tweens.add({
+              targets: this.levelMusic,
+              volume: 0,
+              duration: 1000,
+              ease: "Power2.easeOut",
+              onComplete: () => {
+                this.levelMusic.stop();
+              },
+            });
+          }
+
+          // Play victory music
+          this.victoryMusic = this.sound.add("VictoryMusic", {
+            loop: false,
+            volume: 0.4,
+          });
+          if (!gameData.isMuted) {
+            this.victoryMusic.play();
+          }
+
+          // Create celebration particles for character unlock
+          this.createParticleExplosion(
+            this.centerX,
+            this.centerY,
+            0xff6b6b,
+            25,
+            100,
+            200,
+            2000
+          );
+
+          // Get the first newly unlocked character
+          const newCharacterId = newlyUnlockedCharacters[0];
+          const character = this.characters.find(
+            (c) => c.id === newCharacterId
+          );
+
+          if (!character) {
+            // Fallback to winner animation if character not found
+            this.showWinnerAnimation(nextLevel);
+            return;
+          }
+
+          // Create new character sprite
+          const newCharacter = this.add
+            .sprite(
+              this.centerX,
+              this.centerY,
+              this.getCharacterSpriteKeyForId(newCharacterId)
+            )
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setDepth(120);
+
+          // Create "NEW CHARACTER UNLOCKED!" text
+          const unlockText = this.add
+            .text(this.centerX, this.centerY - 110, "NEW CHARACTER UNLOCKED!", {
+              fontFamily: "Fobble",
+              fontSize: "32px",
+              fill: "#ffd700",
+              stroke: "#000000",
+              strokeThickness: 4,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setDepth(125);
+
+          // Create character name text
+          const characterNameText = this.add
+            .text(this.centerX, this.centerY + 90, character.name, {
+              fontFamily: "Fobble",
+              fontSize: "24px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setDepth(125);
+
+          // Animate character entrance with same animation as winner
+          this.tweens.add({
+            targets: newCharacter,
+            scale: 1.2,
+            alpha: 1,
+            duration: 800,
+            ease: "Back.easeOut",
+            onComplete: () => {
+              // Start walking animation
+              newCharacter.play(this.getCharacterWalkKeyForId(newCharacterId));
+
+              // Scale down to normal size
+              this.tweens.add({
+                targets: newCharacter,
+                scale: 1.0,
+                duration: 300,
+                ease: "Power2.easeOut",
+              });
+            },
+          });
+
+          // Animate text entrance
+          this.tweens.add({
+            targets: [unlockText, characterNameText],
+            scale: 1,
+            alpha: 1,
+            duration: 600,
+            delay: 400,
+            ease: "Back.easeOut",
+          });
+
+          // Show completion card after animation
+          this.time.delayedCall(1000, () => {
+            this.showCompletionCard(
+              newlyUnlockedCharacters,
+              nextLevel,
+              newCharacter
+            );
+          });
+        }
+
+        showWinnerAnimation(nextLevel) {
+          // Fade out level music and play victory music
+          if (this.levelMusic) {
+            this.tweens.add({
+              targets: this.levelMusic,
+              volume: 0,
+              duration: 1000,
+              ease: "Power2.easeOut",
+              onComplete: () => {
+                this.levelMusic.stop();
+              },
+            });
+          }
+
+          // Play victory music
+          this.victoryMusic = this.sound.add("VictoryMusic", {
+            loop: false,
+            volume: 0.4,
+          });
+          if (!gameData.isMuted) {
+            this.victoryMusic.play();
+          }
+
+          // Winner animation in the center
+          const winner = this.add
+            .sprite(this.centerX, this.centerY, "winner")
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setDepth(120);
+
+          // Animate winner sprite with dramatic entrance
+          this.tweens.add({
+            targets: winner,
+            scale: 1.2,
+            alpha: 1,
+            duration: 800,
+            ease: "Back.easeOut",
+            onComplete: () => {
+              winner.play("win");
+
+              // Scale down to normal size
+              this.tweens.add({
+                targets: winner,
+                scale: 1.0,
+                duration: 300,
+                ease: "Power2.easeOut",
+              });
+
+              // Show completion card after winner animation
+              this.time.delayedCall(1500, () => {
+                this.showCompletionCard([], nextLevel, winner);
+              });
+            },
+          });
+        }
+
+        getCharacterSpriteKeyForId(characterId) {
+          switch (characterId) {
+            case "pirate":
+              return "piratePenguin";
+            case "ninja":
+              return "ninjaPenguin";
+            case "aviator":
+              return "aviatorPenguin";
+            case "viking":
+              return "vikingPenguin";
+            default:
+              return "pudgyPenguin";
+          }
+        }
+
+        getCharacterWalkKeyForId(characterId) {
+          switch (characterId) {
+            case "pirate":
+              return "piratewalk";
+            case "ninja":
+              return "ninjawalk";
+            case "aviator":
+              return "aviatorwalk";
+            case "viking":
+              return "vikingwalk";
+            default:
+              return "walk";
+          }
+        }
+
+        showCompletionCard(newlyUnlockedCharacters, nextLevel, winner) {
+          // Fade out starburst and winner
+
+          // Choice buttons
+          this.time.delayedCall(600, () => {
+            this.createLevelCompletionButtons(nextLevel);
+          });
+        }
+
+        createLevelCompletionButtons(nextLevel) {
+          // Hub button
+          const hubButton = this.add
+            .text(this.centerX - 80, this.centerY + 140, "HUB", {
+              fontFamily: "Fobble",
+              fontSize: "32px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setDepth(160)
+            .setScale(0)
+            .setAlpha(0)
+            .setInteractive()
+            .on("pointerdown", () => {
+              this.sound.play("ClickFx", { volume: 0.5 });
+              this.returnToHub();
+            });
+
+          // Next level button
+          const nextLevelButton = this.add
+            .text(this.centerX + 80, this.centerY + 140, `LEVEL ${nextLevel}`, {
+              fontFamily: "Fobble",
+              fontSize: "32px",
+              fill: "#a9ff99",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setDepth(160)
+            .setScale(0)
+            .setAlpha(0)
+            .setInteractive()
+            .on("pointerdown", () => {
+              this.sound.play("ClickFx", { volume: 0.5 });
+              this.startNextLevel(nextLevel);
+            });
+
+          // Left arrow for HUB button
+          const leftArrow = this.add
+            .text(this.centerX - 125, this.centerY + 142, "◄", {
+              fontSize: "32px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setDepth(160)
+            .setScale(0)
+            .setAlpha(0)
+            .setInteractive()
+            .on("pointerdown", () => {
+              this.sound.play("ClickFx", { volume: 0.5 });
+              this.returnToHub();
+            });
+
+          // Right arrow for LEVEL button
+          const rightArrow = this.add
+            .text(this.centerX + 140, this.centerY + 142, "►", {
+              fontSize: "32px",
+              fill: "#a9ff99",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setDepth(160)
+            .setScale(0)
+            .setAlpha(0)
+            .setInteractive()
+            .on("pointerdown", () => {
+              this.sound.play("ClickFx", { volume: 0.5 });
+              this.startNextLevel(nextLevel);
+            });
+
+          // Pop-in animation for both buttons and arrows
+          this.tweens.add({
+            targets: [hubButton, nextLevelButton, leftArrow, rightArrow],
+            scale: 1,
+            alpha: 1,
+            duration: 600,
+            ease: "Back.easeOut",
+            delay: 200,
+            onComplete: () => {
+              // Add bobbing animation to both buttons and arrows
+              this.tweens.add({
+                targets: hubButton,
+                y: hubButton.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+
+              this.tweens.add({
+                targets: nextLevelButton,
+                y: nextLevelButton.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+
+              this.tweens.add({
+                targets: leftArrow,
+                y: leftArrow.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+
+              this.tweens.add({
+                targets: rightArrow,
+                y: rightArrow.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+            },
+          });
+
+          // Add keyboard controls
+          this.setupCompletionControls(nextLevel);
+        }
+
+        setupCompletionControls(nextLevel) {
+          this.spaceKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+          );
+          this.enterKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.ENTER
+          );
+          this.hKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.H
+          );
+          this.nKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.N
+          );
+
+          // Set up a timer to call the completion screen update
+          this.completionUpdateTimer = this.time.addEvent({
+            delay: 100,
+            callback: this.updateCompletionScreen,
+            callbackScope: this,
+            loop: true,
+          });
+        }
+
+        returnToHub() {
+          // Stop level music
+          if (this.levelMusic) {
+            this.levelMusic.stop();
+          }
+          if (this.victoryMusic) {
+            this.victoryMusic.stop();
+          }
+
+          // Clean up completion timer
+          if (this.completionUpdateTimer) {
+            this.completionUpdateTimer.destroy();
+            this.completionUpdateTimer = null;
+          }
+
+          // Clean up old ice platform texture
+          if (this.textures.exists("icePlatform")) {
+            this.textures.remove("icePlatform");
+          }
+
+          // Reset level transition state
+          this.levelTransitioning = false;
+
+          this.scene.start("HubScene");
+        }
+
+        startNextLevel(nextLevel) {
+          // Stop victory music
+          if (this.victoryMusic) {
+            this.victoryMusic.stop();
+          }
+
+          // Clean up completion timer
+          if (this.completionUpdateTimer) {
+            this.completionUpdateTimer.destroy();
+            this.completionUpdateTimer = null;
+          }
+
+          // Clean up old ice platform texture
+          if (this.textures.exists("icePlatform")) {
+            this.textures.remove("icePlatform");
+          }
+
+          // Reset level transition state
+          this.levelTransitioning = false;
+
+          this.scene.start("GameScene", {
+            selectedCharacter: this.selectedCharacter,
+            selectedLevel: nextLevel,
+            isNewGame: false,
+          });
+        }
+
+        update(time, delta) {
+          if (!this.gameRunning) return;
+
+          this.updateBoosts();
+          this.handlePlayerInput();
+          this.updatePlayerFlip();
+          this.updateAIPenguins();
+          this.updateAIFlips();
+          this.checkBounds();
+          this.updateUI();
+
+          // Update snowflakes
+          this.snowflakes.children.each((flake) => {
+            flake.y += flake.speedY * (delta / 1000);
+            flake.x += Math.sin(delta / 5000) * flake.driftX * 500; // wavy cosy drift
+
+            // Destroy off-screen flakes
+            if (flake.y > this.sys.game.config.height + 10) {
+              flake.destroy();
+            }
+          });
+        }
+
+        updateCompletionScreen() {
+          // Safety check - ensure input system is ready
+          if (!this.input || !this.input.keyboard) return;
+
+          // Handle keyboard controls for completion screen
+          if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            this.returnToHub();
+          }
+          if (this.enterKey && Phaser.Input.Keyboard.JustDown(this.enterKey)) {
+            // Get the next level number from the current level + 1
+            const nextLevel = this.currentLevel + 1;
+            this.startNextLevel(nextLevel);
+          }
+          if (this.hKey && Phaser.Input.Keyboard.JustDown(this.hKey)) {
+            this.returnToHub();
+          }
+          if (this.nKey && Phaser.Input.Keyboard.JustDown(this.nKey)) {
+            const nextLevel = this.currentLevel + 1;
+            this.startNextLevel(nextLevel);
+          }
+        }
+
+        gameWin() {
+          // This function is kept for backwards compatibility but shouldn't be called anymore
+          this.completeLevel();
+        }
+
+        destroy() {
+          // Stop all music when scene is destroyed
+          if (this.levelMusic) {
+            this.levelMusic.stop();
+          }
+          if (this.victoryMusic) {
+            this.victoryMusic.stop();
+          }
+          super.destroy();
+        }
+      }
+
+      // Game configuration
+      const config = {
+        type: Phaser.AUTO,
+        width: 400,
+        height: 600,
+        parent: "game-container",
+        backgroundColor: "#b3d9ff",
+        physics: {
+          default: "arcade",
+          arcade: {
+            gravity: { y: 0 },
+            debug: false,
+          },
+        },
+        pixelArt: false,
+        render: { roundPixels: false },
+        scene: [BootLoader, HubScene, GameScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH,
+        },
+      };
+
+      // Start the game
+      const game = new Phaser.Game(config);
+
+      // Initialize game data when SDK is ready
+      window.FarcadeSDK.singlePlayer.actions.ready().then((gameInfo) => {
+        if (gameInfo && gameInfo.initialGameState) {
+          gameData.initialize(gameInfo.initialGameState.gameState);
+        } else {
+          gameData.initialize();
+        }
+      });
+
+      // Farcade SDK event handlers
+      window.FarcadeSDK.on("play_again", () => {
+        if (game && game.textures.exists("icePlatform")) {
+          game.textures.remove("icePlatform");
+        }
+        // Return to hub scene
+        game.scene.start("HubScene");
+      });
+
+      window.FarcadeSDK.on("toggle_mute", ({ isMuted }) => {
+        gameData.isMuted = isMuted;
+      });
+    </script>
+  </body>
+</html>

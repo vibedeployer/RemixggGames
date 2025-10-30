@@ -1,0 +1,1558 @@
+<![doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <title>Wizard Barista</title>
+    <style>
+      html,
+      body {
+        display: block;
+        margin: 0 auto;
+      }
+      /* ensure box-sizing to avoid unexpected overflow from padding/borders */
+      * {
+        box-sizing: border-box;
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      /* 9:16 portrait wrapper */
+
+      canvas {
+        position: absolute;
+        inset: 0;
+        width: 100vw;
+        height: 100vh;
+        display: block;
+        touch-action: none;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap" id="wrap">
+      <div class="screen" id="screen">
+        <canvas id="game"></canvas>
+      </div>
+    </div>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@0.2.1/dist/index.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.60.0/dist/phaser.min.js"></script>
+    <script>
+      (function () {
+        const FAR = window.FarcadeSDK;
+        const canvas = document.getElementById("game");
+
+        // Fixed logical game size (9:16)
+        const WIDTH = 400;
+        const HEIGHT = 600;
+
+        // Shared constants - use purple instead of black and provide a purple color
+        const INGREDIENTS = [
+          { id: "red", color: "#ff6b6b" },
+          { id: "blue", color: "#6ba6ff" },
+          { id: "yellow", color: "#ffd76b" },
+          { id: "purple", color: "#b88cff" },
+        ];
+        const MAX_MISTAKES = 3;
+        // Make multiplier >1 so angryRate ramps much faster after each correct drink
+        const SCORE_ANGRY_INC = 1.35;
+
+        // external potion image URLs (user-provided)
+        const POTION_URLS = {
+          pot_red:
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/item_potion_red-export-Uzsp8pTLPpwcH0I8CfEwkHa7SJrldC.png?kxaD",
+          pot_yellow:
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/item_potion_yellow-export-export-ruixVDzRCTrhNA8rywKanKUfG8w2g5.png?rkSz",
+          pot_blue:
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/item_potion_blue-export-XbvgbS10RRlELzCzIliRrgLItVQeAv.png?C1Th",
+          pot_purple:
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/blackpotion-PJUgaz9zNAj5kKF9XLtenrKJWZwmbS.png?tMO7",
+        };
+
+        // new: clear potion image to use as glass overlay (transparent)
+        const CLEAR_POTION_URL =
+          "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/clearpotion-LQmgWrLwBW64p6WmXusFwsCdR2j0VW.png?nIkO";
+
+        // Utility
+        function clamp(v, a, b) {
+          return Math.max(a, Math.min(b, v));
+        }
+
+        // Placeholder to reference live scene from global Farcade listeners and debug
+        let activeScene = null;
+
+        class BootScene extends Phaser.Scene {
+          constructor() {
+            super({ key: "BootScene" });
+          }
+          preload() {
+            // Load splash bg PNG
+            this.load.image(
+              "bg",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/bg-854SBUb0UAzgmsKICByj3RCBRrFMqo.png?lmux"
+            );
+
+            this.load.spritesheet(
+              "vibedeploy", // same key the old code used
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Black%20and%20White%20Skull%20Game%20Over%20Animated%20Logo-uiFuD29sTrgWdVjHeCe4s04pOb9GmY.png?XwIX",
+              { frameWidth: 100, frameHeight: 100 }
+            );
+            /* 2.  Declare the animations once, right here in preload() */
+            this.load.on("complete", () => {
+              // runs once everything is loaded
+              this.anims.create({
+                key: "vibedeployplay",
+                frames: this.anims.generateFrameNumbers("vibedeploy", {
+                  start: 0,
+                  end: 5,
+                }),
+                frameRate: 12,
+                repeat: -1,
+              });
+
+              /* add more animations if you have extra rows / clips */
+              // this.anims.create({ key: 'run', frames: this.anims.generateFrameNumbers('player', { start: 8, end: 15 }), frameRate: 16, repeat: -1 });
+            });
+          }
+
+          create() {
+            const { width, height } = this.cameras.main;
+            this.cameras.main.fadeIn(500, 0, 0, 0);
+            this.cameras.main.setBackgroundColor("#000");
+            const vibedeploy = this.add.sprite(
+              width / 2,
+              height / 2,
+              "vibedeploy"
+            );
+            vibedeploy.setScale(2);
+            vibedeploy.play("vibedeployplay");
+
+            this.time.delayedCall(1500, () => {
+              this.cameras.main.fadeOut(500, 0, 0, 0); // 500 ms fade-to-black
+              this.cameras.main.once(
+                Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+                () => {
+                  this.scene.start("LoadingScene"); // your next scene
+                }
+              );
+            });
+          }
+        }
+
+        /* LoadingScene: loads assets and shows progress, then calls FAR.ready and goes to Splash */
+        class LoadingScene extends Phaser.Scene {
+          constructor() {
+            super({ key: "LoadingScene" });
+          }
+          preload() {
+            const w = WIDTH;
+            const h = HEIGHT;
+            // simple progress UI
+            this.cameras.main.fadeIn(500, 0, 0, 0);
+            this.add
+              .image(w / 2, h / 2, "bg")
+              .setDepth(0)
+              .setDisplaySize(WIDTH, HEIGHT);
+
+            const pctText = this.add
+              .text(w / 2, h / 2 + 30, "0%", {
+                font: "12px sans-serif",
+                fill: "#ffffff",
+              })
+              .setOrigin(0.5);
+
+            this.load.on("progress", (p) => {
+              pctText.setText(Math.round(p * 100) + "%");
+            });
+
+            this.load.on("complete", () => {
+              // small flourish removal handled automatically when scene changes
+            });
+
+            this.load.image(
+              "logotext",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/f5f3c53a-7c11-41a0-b0d8-327b87992e21-8ZEVAjzAdVx9UxjTn4YSDXjV4Wdv1t.png?8rfC"
+            );
+
+            this.load.image(
+              "barfront",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/ChatGPT%20Image%20Aug%2016%2C%202025%2C%2012_15_57%20PM-zctAHLBpLYwaAHEFA3Ncpqyj4Lu3vX.png?1zdD"
+            );
+
+            this.load.image(
+              "heart",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/heart-j3TAJ68KCGSIjrL2JoGXu88ByDRbHK.png?kkiK"
+            );
+
+            this.load.spritesheet(
+              "cauldron",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/cauldron_bubbling_9-export-prnjDAwMOAKQYPow9EbT94gJEr2HYq.png?BMrb",
+              { frameWidth: 128, frameHeight: 128 }
+            );
+
+            // potion images
+            this.load.image("pot_red", POTION_URLS.pot_red);
+            this.load.image("pot_blue", POTION_URLS.pot_blue);
+            this.load.image("pot_yellow", POTION_URLS.pot_yellow);
+            this.load.image("pot_purple", POTION_URLS.pot_purple);
+
+            // clear potion overlay
+            this.load.image("clearpotion", CLEAR_POTION_URL);
+
+            // wizards
+            this.load.spritesheet(
+              "wizard1",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0046-KVaJQoodQTwMByDtppDlm0kAai0HJ3.png?Scca",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard2",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0039-Fw1uem4pLZyflEVxAJQteX6ONyDfYT.png?tzS3",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard3",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0035-laVQ1BPISoEPOAX8d548h6oMGW5bXc.png?7DiN",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard4",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0038-HSqysIbAHjywURuw7SAdjyEyp0HGYh.png?lfra",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard5",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0037-oXy4v1Qplq84SyNGlBxyfT7jEvGeUS.png?FIOa",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard6",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0040-kfugG8QjhQ4sZZy9FchJINqiy1TquZ.png?B1gK",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard7",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0041-TbvQEfZVDz4zy5xfQzrYgqvwP8sMGp.png?fxLV",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard8",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0042-fj2QTrbxqdvITIBNWTM9ndglIKpY6H.png?FyXi",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard9",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0043-n2489ZOjNNo0zfeApuNzTGswZ7edLe.png?AxFD",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard10",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0044-sHsjiL48jIx8bts1CfJKkbB4BbAYf2.png?Bh0h",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+            this.load.spritesheet(
+              "wizard11",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/Sprite-0045-l8VAv61OYdMD4QC2z3IYw8fdmCaLXl.png?OMji",
+              {
+                frameWidth: 128,
+                frameHeight: 192,
+              }
+            );
+
+            // audio
+            this.load.audio(
+              "bgmusic",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/cauldron-boiling-173607-7sTvsWMEdiQDgPDDvonx4cVixFEwt8.mp3?jQCG"
+            );
+
+            this.load.audio(
+              "success",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/reception-bell-14620-4fAsvn8B6SS78oIfwLJor5lD3frr4r.mp3?S67U"
+            );
+            this.load.audio(
+              "fail",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/deathmagic-94937-SXFRDKDARLtUix3UmMBzXyRF8LwlRL.mp3?kARx"
+            );
+            this.load.audio(
+              "click",
+              "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/8f7bb881-05ad-485b-8e74-127142c6ae52/big-bubble-2-169074-7arvizSYSpFsB1WSQdcKlOxguEmXAE.mp3?XFkA"
+            );
+          }
+
+          create() {
+            // Load font first
+            this.loadFontPromise = document.fonts.load('16px "Press Start 2P"');
+            // signal Farcade that the game is fully loaded
+            if (
+              FAR &&
+              FAR.singlePlayer &&
+              FAR.singlePlayer.actions &&
+              FAR.singlePlayer.actions.ready
+            ) {
+              try {
+                FAR.singlePlayer.actions.ready();
+              } catch (e) {}
+            }
+            // go to splash
+            this.scene.start("SplashScene");
+          }
+        }
+
+        /* SplashScene: shows title and start button, then transitions to MainScene */
+        class SplashScene extends Phaser.Scene {
+          constructor() {
+            super({ key: "SplashScene" });
+          }
+          create() {
+            const w = WIDTH,
+              h = HEIGHT;
+            // background
+            this.add
+              .image(w / 2, h / 2, "bg")
+              .setDepth(0)
+              .setDisplaySize(WIDTH, HEIGHT);
+
+            // title
+            const title = this.add.image(w / 2, h * 0.32, "logotext", {});
+            title.setOrigin(0.5);
+
+            // Start button (graphics + text)
+            const btnW = 160,
+              btnH = 44;
+            const btnX = w / 2 - btnW / 2,
+              btnY = h * 0.6 - btnH / 2;
+            const btn = this.add
+              .rectangle(w / 2, h * 0.6, btnW, btnH, 0x7b5cff, 1)
+              .setStrokeStyle(2, 0xe9e0ff);
+            btn.setInteractive({ useHandCursor: true });
+            const btnText = this.add
+              .text(w / 2, h * 0.6, "Start", {
+                fontFamily: '"Press Start 2P"',
+                fontSize: "12px",
+                fill: "#ffffff",
+              })
+              .setOrigin(0.5);
+
+            // small hint under button
+            const hint = this.add.text(
+              w / 2,
+              h * 0.72,
+              "Tap potions to mix them",
+              {
+                fontFamily: '"Press Start 2P"',
+                fontSize: "10px",
+                fill: "#ffffff",
+                align: "center",
+                lineSpacing: 8,
+              }
+            );
+            hint.setOrigin(0.5);
+
+            // click sound instance
+            const clickSfx = this.sound.add("click", { volume: 0.4 });
+
+            const startGame = () => {
+              clickSfx.play();
+              // start main scene
+              this.scene.start("MainScene");
+            };
+
+            btn.on("pointerdown", startGame);
+            btnText
+              .setInteractive({ useHandCursor: true })
+              .on("pointerdown", startGame);
+
+            // also allow keyboard Enter to start (desktop)
+            this.input.keyboard.once("keydown-ENTER", startGame);
+          }
+        }
+
+        /* MainScene: core gameplay (preload removed; assets provided by LoadingScene) */
+        class MainScene extends Phaser.Scene {
+          constructor() {
+            super({ key: "MainScene" });
+            // scene state
+            this.SAFE_MARGIN = 14;
+            this.TOP_SHIFT = 20; // move top elements down by 30
+            this.positions = {};
+            this.potionParticles = []; // particles emitted from potion buttons (separate)
+            this.cauldronParticles = []; // particles emitted from mixing/cauldron
+            this.scoreSparks = [];
+            this.mixture = [];
+            this.currentOrder = [];
+            this.score = 0;
+            this.mistakes = 0;
+            this.angry = 0;
+            this.angryRate = 0.02;
+            this.running = true;
+            this.gfx = null; // top-layer graphics (above cauldron)
+            this.liquidGfx = null; // liquid layer (behind cauldron)
+            this.scoreText = null;
+            this.cauldronSprite = null;
+
+            this.wiz = null;
+
+            // glass animation state: progress 0..1 (1 == fully visible at 25% of original size)
+            this.glass = { progress: 0, alpha: 0 };
+            // Changed: make glass occupy nearly the whole speech bubble
+            this.GLASS_SIZE_FACTOR = 0.95;
+
+            this.bubbleTimer = null; // delayed call to hide bubble
+
+            // sprite references
+            this.ingSprites = [];
+            this.mistakeSprites = [];
+            this.orderSprites = [];
+
+            // bubble image ref (new)
+            this.bubbleImage = null;
+            this.BUBBLE_X = WIDTH * 0.5 + 110;
+            this.BUBBLE_Y = HEIGHT * 0.44 - 40;
+          }
+
+          create() {
+            activeScene = this;
+            this.add
+              .image(WIDTH / 2, HEIGHT / 2, "bg")
+              .setDepth(0)
+              .setDisplaySize(WIDTH, HEIGHT);
+            this.add.image(WIDTH / 2, HEIGHT / 2, "barfront").setDepth(1);
+
+            this.bgmusic = this.sound.add("bgmusic", {
+              loop: true,
+              volume: 0.5,
+            });
+            // autoplay bgmusic only if not muted
+            if (!this.sound.mute) {
+              try {
+                this.bgmusic.play();
+              } catch (e) {}
+            }
+
+            this.sfx = {
+              success: this.sound.add("success", { volume: 0.6 }),
+              fail: this.sound.add("fail", { volume: 0.6 }),
+              click: this.sound.add("click", { volume: 0.4 }),
+            };
+
+            // liquid layer: behind cauldron but above background
+            this.liquidGfx = this.add.graphics({ x: 0, y: 0 });
+            this.liquidGfx.setDepth(1.5);
+
+            // top layer: particles, sparks, UI accents (above cauldron)
+            this.gfx = this.add.graphics({ x: 0, y: 0 });
+            this.gfx.setDepth(5);
+
+            // score text (top-left) - changed to white
+            this.scoreText = this.add.text(12, 12, "Score: 0", {
+              font: `${Math.max(14, Math.floor(WIDTH * 0.06))}px sans-serif`,
+              fill: "#ffffff",
+            });
+            this.scoreText.setDepth(30);
+
+            // Fixed layout (no dynamic resize)
+            this.setupFixedLayout();
+
+            // create cauldron animation and sprite
+            this.anims.create({
+              key: "cauldron_anim",
+              frames: this.anims.generateFrameNumbers("cauldron", {
+                start: 0,
+                end: 8,
+              }),
+              frameRate: 12,
+              repeat: -1,
+            });
+            this.cauldronSprite = this.add.sprite(
+              WIDTH / 2,
+              HEIGHT - 150,
+              "cauldron"
+            );
+            this.cauldronSprite.play("cauldron_anim");
+            // place cauldron between liquidGfx (0.5) and gfx (2)
+            this.cauldronSprite.setDepth(2);
+
+            // create bubble image (clear potion overlay) and keep hidden initially
+            try {
+              this.bubbleImage = this.add.image(
+                this.BUBBLE_X,
+                this.BUBBLE_Y,
+                "clearpotion"
+              );
+              this.bubbleImage.setDepth(23); // above orderSprites (22) and above gfx drawings (2)
+              this.bubbleImage.setVisible(false);
+              this.bubbleImage.setAlpha(0);
+            } catch (e) {
+              this.bubbleImage = null;
+            }
+
+            // create ingredient sprites using provided potion images
+            this.ingSprites = [];
+            for (const btn of this.positions.ingredients) {
+              const key = "pot_" + btn.ing.id;
+              const img = this.add.image(btn.x, btn.y, key);
+              img.setDisplaySize(btn.w * 0.9, btn.h * 0.9);
+              img.setDepth(3);
+              img.setInteractive({ useHandCursor: true });
+              // pointer handler per sprite to support direct tapping
+              img.on("pointerdown", (p) => {
+                if (!this.running) return;
+                this.mixture.push(btn.ing.id);
+                this.sfx.click.play();
+                // potion-specific particles (appear around the potion button, separate pool)
+                this.potionParticles.push({
+                  x: btn.x - 6 + (Math.random() - 0.5) * 8,
+                  y: btn.y - btn.h * 0.4 + (Math.random() - 0.5) * 6,
+                  vx: (Math.random() - 0.5) * 0.6,
+                  vy: 0.1 + Math.random() * 0.4,
+                  s: 4 + Math.random() * 4,
+                  life: 0.45 + Math.random() * 0.4,
+                  maxLife: 0.45 + Math.random() * 0.4,
+                  a: 1,
+                  c: Phaser.Display.Color.HexStringToColor(btn.ing.color).color,
+                });
+                if (
+                  FAR &&
+                  FAR.singlePlayer &&
+                  FAR.singlePlayer.actions &&
+                  FAR.singlePlayer.actions.hapticFeedback
+                ) {
+                  try {
+                    FAR.singlePlayer.actions.hapticFeedback();
+                  } catch (e) {}
+                }
+
+                // NEW: auto-attempt logic:
+                // - If the unique set of selected ingredients equals the desired order -> auto attempt (success)
+                // - If the newly tapped ingredient is not part of the desired set -> auto attempt (will fail)
+                try {
+                  const desiredSet = Array.from(
+                    new Set(this.currentOrder)
+                  ).sort();
+                  const mixSet = Array.from(new Set(this.mixture)).sort();
+                  const newly = btn.ing.id;
+                  const equalSets =
+                    mixSet.length === desiredSet.length &&
+                    mixSet.every((v, i) => v === desiredSet[i]);
+                  const newlyInvalid = !desiredSet.includes(newly);
+                  if (equalSets || newlyInvalid) {
+                    // slight delay so click SFX/particles are visible before transitioning
+                    this.time.delayedCall(60, () => {
+                      if (this.running) this.attemptMix();
+                    });
+                  }
+                } catch (e) {
+                  // fallback: do nothing if check fails
+                }
+              });
+              this.ingSprites.push(img);
+            }
+
+            // create top mistake sprites (use heart image) with a controlled pixel size
+            this.mistakeSprites = [];
+            const iconSize = Math.max(18, Math.floor(WIDTH * 0.04));
+            for (let i = 0; i < MAX_MISTAKES; i++) {
+              const x =
+                WIDTH - this.SAFE_MARGIN - i * (iconSize + 8) - iconSize * 0.5;
+              const y = this.SAFE_MARGIN + iconSize * 0.2 + this.TOP_SHIFT;
+              const ms = this.add.image(x, y, "heart");
+              // set a reasonable display size in pixels and reset scale to 1 to avoid large texture scaling
+              ms.setDisplaySize(
+                iconSize,
+                Math.max(8, Math.floor(iconSize * 0.7))
+              );
+              ms.setScale(1);
+              ms.setDepth(30);
+              ms.setAlpha(1);
+              ms.setVisible(true);
+              this.mistakeSprites.push(ms);
+            }
+
+            // pointer input for cauldron (if tapping outside sprites)
+            this.input.on("pointerdown", (pointer) => {
+              if (!this.running) return;
+              const px = pointer.x;
+              const py = pointer.y;
+              const c = this.positions.cauldron;
+              const dx = px - c.x,
+                dy = py - c.y;
+              if (dx * dx + dy * dy <= c.r * c.r) {
+                this.attemptMix();
+              }
+            });
+
+            // initialize game state
+            this.resetState();
+          }
+
+          // Changed: place ingredient buttons in a centered bottom row
+          setupFixedLayout() {
+            this.width = WIDTH;
+            this.height = HEIGHT;
+            this.SAFE_MARGIN = Math.max(
+              24,
+              Math.round(Math.min(WIDTH, HEIGHT) * 0.03)
+            );
+            this.positions.cauldron = {
+              x: WIDTH * 0.5,
+              y: HEIGHT * 0.66,
+              r: Math.max(36, Math.min(WIDTH, HEIGHT) * 0.14),
+            };
+
+            const ibuttonCount = INGREDIENTS.length;
+            const pad = 12;
+            // Use a horizontal layout along the bottom, above SAFE_MARGIN
+            const maxTotalW = Math.min(
+              WIDTH * 0.9,
+              ibuttonCount * 84 + (ibuttonCount - 1) * pad
+            );
+            const buttonW = Math.max(
+              44,
+              Math.min(
+                84,
+                Math.floor(
+                  (maxTotalW - (ibuttonCount - 1) * pad) / ibuttonCount
+                )
+              )
+            );
+            const y = HEIGHT - this.SAFE_MARGIN - buttonW * 0.5;
+            const totalWidth =
+              ibuttonCount * buttonW + (ibuttonCount - 1) * pad;
+            const startX = WIDTH * 0.5 - totalWidth * 0.5 + buttonW * 0.5;
+            this.positions.ingredients = INGREDIENTS.map((ing, i) => {
+              const x = startX + i * (buttonW + pad);
+              return { x, y, w: buttonW, h: buttonW, ing };
+            });
+
+            this.positions.customer = {
+              x: WIDTH / 2 + 100,
+              y: HEIGHT / 2 - 110,
+            };
+
+            if (this.scoreText)
+              this.scoreText.setPosition(
+                this.SAFE_MARGIN,
+                this.SAFE_MARGIN + this.TOP_SHIFT
+              );
+
+            // reposition any existing ingredient sprites
+            if (
+              this.ingSprites &&
+              this.ingSprites.length === this.positions.ingredients.length
+            ) {
+              for (let i = 0; i < this.ingSprites.length; i++) {
+                const btn = this.positions.ingredients[i];
+                const img = this.ingSprites[i];
+                img.setPosition(btn.x, btn.y);
+                img.setDisplaySize(btn.w * 0.9, btn.h * 0.9);
+              }
+            }
+
+            if (
+              this.orderSprites &&
+              this.orderSprites.length === this.currentOrder.length
+            ) {
+              const cpos = this.positions.customer;
+              const w = Math.min(this.width * 0.7, 220);
+              const h = Math.max(48, this.currentOrder.length * 22);
+              const startX = cpos.x - (this.currentOrder.length - 1) * 22;
+              for (let i = 0; i < this.orderSprites.length; i++) {
+                const os = this.orderSprites[i];
+                if (os && os.setPosition) os.setPosition(10, 10);
+                if (os && os.setDisplaySize) os.setDisplaySize(32, 32);
+              }
+            }
+
+            if (this.mistakeSprites && this.mistakeSprites.length) {
+              const iconSize = Math.max(12, Math.floor(this.width * 0.04));
+              for (let i = 0; i < this.mistakeSprites.length; i++) {
+                const x2 =
+                  this.width -
+                  this.SAFE_MARGIN -
+                  i * (iconSize + 8) -
+                  iconSize * 0.5;
+                const y2 = this.SAFE_MARGIN + iconSize * 0.2 + this.TOP_SHIFT;
+                const ms = this.mistakeSprites[i];
+                // ensure consistent display size & scale on layout updates
+                ms.setPosition(x2, y2);
+                ms.setDisplaySize(
+                  iconSize,
+                  Math.max(8, Math.floor(iconSize * 0.7))
+                );
+                ms.setScale(1);
+                ms.setVisible(true);
+              }
+            }
+
+            // reposition bubble image if present
+            if (this.bubbleImage) {
+              this.bubbleImage.setPosition(this.BUBBLE_X, this.BUBBLE_Y);
+            }
+          }
+
+          resetState() {
+            this.running = true;
+            this.score = 0;
+            this.mistakes = 0;
+            this.angry = 0;
+            this.mixture = [];
+            this.potionParticles = [];
+            this.cauldronParticles = [];
+            this.scoreSparks = [];
+            // destroy any existing wizard on reset to keep state clean
+            if (this.wiz) {
+              try {
+                this.wiz.destroy();
+              } catch (e) {}
+              this.wiz = null;
+            }
+            // hide glass immediately on reset
+            this.glass.progress = 0;
+            this.glass.alpha = 0;
+            // clear any pending bubble timer
+            if (this.bubbleTimer) {
+              try {
+                this.bubbleTimer.remove(false);
+              } catch (e) {}
+              this.bubbleTimer = null;
+            }
+            this.spawnOrder();
+            // Ensure a wizard and its bubble appear at the start
+            try {
+              this.spawnRandomWizard();
+            } catch (e) {
+              // ignore if spawn fails
+            }
+            // reset tints on mistake sprites and ensure consistent sizing
+            if (this.mistakeSprites) {
+              const iconSize = Math.max(12, Math.floor(this.width * 0.04));
+              for (const ms of this.mistakeSprites) {
+                ms.clearTint();
+                ms.setAlpha(1);
+                ms.setScale(1);
+                ms.setVisible(true);
+                ms.setDisplaySize(
+                  iconSize,
+                  Math.max(8, Math.floor(iconSize * 0.7))
+                );
+              }
+            }
+            if (this.bubbleImage) {
+              this.bubbleImage.setVisible(false);
+              this.bubbleImage.setAlpha(0);
+            }
+          }
+
+          spawnOrder() {
+            const bases = ["red", "blue", "yellow"];
+            const count = Math.random() < 0.18 ? 3 : 2;
+            const shuffled = bases.slice().sort(() => Math.random() - 0.5);
+            this.currentOrder = shuffled.slice(0, count);
+            if (Math.random() < 0.12) this.currentOrder.push("purple");
+            this.angry = 0;
+            // Harder baseline: start with noticeably faster impatience
+            this.angryRate = 0.06 + Math.random() * 0.06;
+
+            // create/update visual images for the order (use potion images for colors)
+            // remove old sprites
+            if (this.orderSprites && this.orderSprites.length) {
+              for (const s of this.orderSprites) {
+                try {
+                  s.destroy();
+                } catch (e) {}
+              }
+            }
+            this.orderSprites = [];
+            const cpos = this.positions.customer;
+            const w = Math.min(this.width * 0.7, 220);
+            const h = Math.max(48, this.currentOrder.length * 22);
+            const startX = cpos.x - (this.currentOrder.length - 1) * 22;
+            for (let i = 0; i < this.currentOrder.length; i++) {
+              const id = this.currentOrder[i];
+              const key = "pot_" + id;
+              const img = this.add.image(
+                startX + i * 44,
+                cpos.y - h / 2 + i * 44,
+                key
+              );
+              img.setDisplaySize(32, 32);
+              img.setDepth(22);
+              this.orderSprites.push(img);
+            }
+          }
+
+          colorFor(id) {
+            const it = INGREDIENTS.find((x) => x.id === id);
+            return it ? it.color : "#ccc";
+          }
+
+          mixColors(arr) {
+            const set = Array.from(new Set(arr)).sort();
+            const key = set.join("+");
+            const map = {
+              "blue+red": "#9b6cff",
+              "red+yellow": "#ff9a4d",
+              "blue+yellow": "#6ef0b0",
+              "blue+red+yellow": "#b88cff",
+              purple: "#b88cff",
+              red: "#ff6b6b",
+              blue: "#6ba6ff",
+              yellow: "#ffd76b",
+            };
+            return map[key] || "#6b6b6b";
+          }
+
+          arraysEqual(a, b) {
+            if (a.length !== b.length) return false;
+            for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+            return true;
+          }
+
+          // Unified heart-loss handler: increments mistake, animates heart, spawns next order (or ends when hearts are exhausted).
+          loseLife({ playSfx = true } = {}) {
+            // Increment and clamp
+            this.mistakes = Math.min(MAX_MISTAKES, this.mistakes + 1);
+            if (playSfx) {
+              try {
+                this.sfx.fail.play();
+              } catch (e) {}
+            }
+            // small cauldron particle to indicate failure/time-out
+            this.cauldronParticles.push({
+              x: this.positions.cauldron.x,
+              y: this.positions.cauldron.y - this.positions.cauldron.r * 0.05,
+              vx: (Math.random() - 0.5) * 0.6,
+              vy: 0.6 + Math.random() * 0.6,
+              s: 8 + Math.random() * 6,
+              life: 0.8 + Math.random() * 0.4,
+              maxLife: 0.8 + Math.random() * 0.4,
+              a: 1,
+              c: 0xffb3b3,
+            });
+
+            if (
+              FAR &&
+              FAR.singlePlayer &&
+              FAR.singlePlayer.actions &&
+              FAR.singlePlayer.actions.hapticFeedback
+            ) {
+              try {
+                FAR.singlePlayer.actions.hapticFeedback();
+              } catch (e) {}
+            }
+
+            // animate the corresponding heart icon
+            const idx = this.mistakes - 1;
+            const ms =
+              this.mistakeSprites && this.mistakeSprites[idx]
+                ? this.mistakeSprites[idx]
+                : null;
+            const finish = () => {
+              // After animation completes, clear mix and either end or spawn new order/wizard
+              try {
+                this.mixture = [];
+              } catch (e) {}
+              if (this.mistakes >= MAX_MISTAKES) {
+                // ensure running stops and signal Farcade game over
+                this.running = false;
+                if (
+                  FAR &&
+                  FAR.singlePlayer &&
+                  FAR.singlePlayer.actions &&
+                  FAR.singlePlayer.actions.gameOver
+                ) {
+                  try {
+                    FAR.singlePlayer.actions.gameOver({ score: this.score });
+                  } catch (e) {}
+                }
+              } else {
+                try {
+                  this.spawnOrder();
+                  this.spawnRandomWizard();
+                } catch (e) {}
+              }
+            };
+
+            if (ms) {
+              // ensure consistent starting state
+              try {
+                ms.clearTint();
+                ms.setAlpha(1);
+                ms.setScale(1);
+                ms.setVisible(true);
+                this.tweens.add({
+                  targets: ms,
+                  scaleX: 0.2,
+                  scaleY: 0.2,
+                  alpha: 0,
+                  duration: 260,
+                  ease: "Quad.easeOut",
+                  onComplete: () => {
+                    try {
+                      ms.setVisible(false);
+                      ms.setTint(0xb33333);
+                    } catch (e) {}
+                    finish();
+                  },
+                });
+              } catch (e) {
+                ms.setScale(0.2);
+                ms.setAlpha(0);
+                ms.setVisible(false);
+                ms.setTint(0xb33333);
+                finish();
+              }
+            } else {
+              finish();
+            }
+          }
+
+          // Create a new random wizard with fade-in and also tween the glass in
+          // Also: show the drink in a speech bubble 100px to the right and auto-fade after 1s
+          spawnRandomWizard() {
+            try {
+              const wizW = Math.min(140, Math.floor(this.width * 0.36));
+              const wizH = Math.floor(wizW * 1.2);
+              // ensure old one is destroyed if any (shouldn't be present when called after fade-out)
+              if (this.wiz) {
+                try {
+                  this.wiz.destroy();
+                } catch (e) {}
+                this.wiz = null;
+              }
+
+              const wizardKeys = [
+                "wizard1",
+                "wizard2",
+                "wizard3",
+                "wizard4",
+                "wizard5",
+                "wizard6",
+                "wizard7",
+                "wizard8",
+                "wizard9",
+                "wizard10",
+                "wizard11",
+              ];
+              const key = Phaser.Utils.Array.GetRandom(wizardKeys);
+              this.wiz = this.add.sprite(WIDTH / 2, HEIGHT / 2 - 30, key);
+              this.wiz.setDepth(0.5);
+              this.wiz.setDisplaySize(wizW, wizH);
+              this.wiz.setScale(0.6);
+              this.wiz.setAlpha(0);
+              // tween wizard in
+              this.tweens.add({
+                targets: this.wiz,
+                alpha: 1,
+                scaleX: 1,
+                scaleY: 1,
+                duration: 220,
+                ease: "Quad.easeOut",
+              });
+
+              // also tween glass in alongside wizard: progress 0 -> 1 (1 corresponds to GLASS_SIZE_FACTOR)
+              try {
+                // cancel any existing bubble timer
+                if (this.bubbleTimer) {
+                  try {
+                    this.bubbleTimer.remove(false);
+                  } catch (e) {}
+                  this.bubbleTimer = null;
+                }
+                this.tweens.add({
+                  targets: this.glass,
+                  progress: 1,
+                  alpha: 1,
+                  duration: 220,
+                  ease: "Quad.easeOut",
+                  onComplete: () => {
+                    // After visible, schedule auto-fade after 1 second
+                    try {
+                      if (this.bubbleTimer) {
+                        try {
+                          this.bubbleTimer.remove(false);
+                        } catch (e) {}
+                        this.bubbleTimer = null;
+                      }
+                      this.bubbleTimer = this.time.delayedCall(1000, () => {
+                        try {
+                          this.tweens.add({
+                            targets: this.glass,
+                            progress: 0,
+                            alpha: 0,
+                            duration: 220,
+                            ease: "Quad.easeIn",
+                            onComplete: () => {
+                              // ensure fully hidden
+                              this.glass.progress = 0;
+                              this.glass.alpha = 0;
+                              if (this.bubbleTimer) {
+                                this.bubbleTimer = null;
+                              }
+                            },
+                          });
+                        } catch (e) {
+                          this.glass.progress = 0;
+                          this.glass.alpha = 0;
+                          this.bubbleTimer = null;
+                        }
+                      });
+                    } catch (e) {}
+                  },
+                });
+              } catch (e) {
+                this.glass.progress = 1;
+                this.glass.alpha = 1;
+                // fallback: schedule manual hide
+                if (this.bubbleTimer) {
+                  try {
+                    this.bubbleTimer.remove(false);
+                  } catch (e) {}
+                  this.bubbleTimer = null;
+                }
+                this.bubbleTimer = this.time.delayedCall(1000, () => {
+                  this.glass.progress = 0;
+                  this.glass.alpha = 0;
+                  this.bubbleTimer = null;
+                });
+              }
+            } catch (e) {
+              // ignore if wizard asset not available
+            }
+          }
+
+          attemptMix() {
+            const desiredSet = Array.from(new Set(this.currentOrder)).sort();
+            const mixSet = Array.from(new Set(this.mixture)).sort();
+            const success = this.arraysEqual(desiredSet, mixSet);
+            if (success) {
+              this.score++;
+              // Much stronger impatience growth: multiply current angryRate and add a small bump; cap higher so timer becomes short quickly
+              this.angryRate = Math.min(
+                1.2,
+                this.angryRate * SCORE_ANGRY_INC + 0.03
+              );
+
+              this.sfx.success.play();
+              for (let i = 0; i < 6; i++) {
+                this.scoreSparks.push({
+                  x: Math.random() * 16,
+                  y: Math.random() * 6,
+                  vx: (Math.random() - 0.5) * 0.6,
+                  s: 2 + Math.random() * 3,
+                  c: 0xffd76b,
+                  life: 0.6 + Math.random() * 0.4,
+                  maxLife: 0.6 + Math.random() * 0.4,
+                  a: 1,
+                });
+              }
+              // cauldron particles (separate pool)
+              for (let i = 0; i < 12; i++) {
+                this.cauldronParticles.push({
+                  x:
+                    this.positions.cauldron.x +
+                    (Math.random() - 0.5) * this.positions.cauldron.r * 0.6,
+                  y:
+                    this.positions.cauldron.y -
+                    this.positions.cauldron.r * 0.15 +
+                    Math.random() * 6,
+                  vx: (Math.random() - 0.5) * 1.2,
+                  vy: 0.5 + Math.random() * 0.8,
+                  s: 4 + Math.random() * 6,
+                  life: 0.7 + Math.random() * 0.6,
+                  maxLife: 0.7 + Math.random() * 0.6,
+                  a: 1,
+                  c: 0xffffff,
+                });
+              }
+              if (
+                FAR &&
+                FAR.singlePlayer &&
+                FAR.singlePlayer.actions &&
+                FAR.singlePlayer.actions.hapticFeedback
+              ) {
+                try {
+                  FAR.singlePlayer.actions.hapticFeedback();
+                } catch (e) {}
+              }
+
+              // If a wizard exists, fade it out first, also tween the glass out, then spawn a new random one.
+              try {
+                if (this.wiz) {
+                  // if bubbleTimer pending, remove it so we control timing
+                  if (this.bubbleTimer) {
+                    try {
+                      this.bubbleTimer.remove(false);
+                    } catch (e) {}
+                    this.bubbleTimer = null;
+                  }
+                  this.tweens.add({
+                    targets: [this.wiz, this.glass],
+                    alpha: 0,
+                    duration: 220,
+                    ease: "Quad.easeIn",
+                    onUpdate: (t) => {
+                      // when tweening glass target, ensure progress is moved out as well (smooth)
+                      if (
+                        this.glass &&
+                        typeof this.glass.progress === "number"
+                      ) {
+                        // linearly map alpha to progress to shrink glass
+                        this.glass.progress = Phaser.Math.Linear(
+                          this.glass.progress,
+                          0,
+                          0.25
+                        );
+                      }
+                    },
+                    onComplete: () => {
+                      try {
+                        if (this.wiz) {
+                          this.wiz.destroy();
+                        }
+                      } catch (e) {}
+                      this.wiz = null;
+                      // ensure glass fully hidden
+                      this.glass.progress = 0;
+                      this.glass.alpha = 0;
+                      this.spawnRandomWizard();
+                    },
+                  });
+                  // also animate progress explicitly to 0
+                  try {
+                    this.tweens.add({
+                      targets: this.glass,
+                      progress: 0,
+                      duration: 220,
+                      ease: "Quad.easeIn",
+                    });
+                  } catch (e) {
+                    this.glass.progress = 0;
+                  }
+                } else {
+                  this.spawnRandomWizard();
+                }
+              } catch (e) {
+                // ignore wizard errors
+                try {
+                  if (this.wiz) {
+                    this.wiz.destroy();
+                    this.wiz = null;
+                  }
+                } catch (e2) {}
+                this.spawnRandomWizard();
+              }
+
+              this.mixture = [];
+              this.spawnOrder();
+            } else {
+              // use unified life-loss handling (this will increment mistakes and end only when hearts are exhausted)
+              this.loseLife({ playSfx: true });
+            }
+          }
+
+          drawScene() {
+            const topG = this.gfx;
+            const liquidG = this.liquidGfx;
+            liquidG.clear();
+            topG.clear();
+            const width = this.width;
+            const height = this.height;
+
+            const cpos = this.positions.customer;
+            const w = Math.min(width * 0.7, 220);
+            const h = Math.max(48, this.currentOrder.length * 22);
+
+            // Draw target glass inside a speech bubble 100px to the right of center
+            try {
+              const bubbleX = this.BUBBLE_X;
+              const bubbleY = this.BUBBLE_Y;
+              const bubbleW = 50;
+              const bubbleH = 70;
+              const tailW = 12;
+              const tailH = 10;
+
+              const scaleProgress =
+                this.glass && typeof this.glass.progress === "number"
+                  ? this.glass.progress
+                  : 0;
+              const gAlpha =
+                this.glass && typeof this.glass.alpha === "number"
+                  ? clamp(this.glass.alpha, 0, 1)
+                  : 0;
+              const alpha = gAlpha * clamp(scaleProgress, 0, 1);
+
+              // bubble background + tail (keep as before)
+              if (alpha > 0.01) {
+                topG.fillStyle(0xffffff, 0.98 * alpha);
+                topG.lineStyle(2, 0xe9e0ff, 0.95 * alpha);
+                topG.fillRoundedRect(
+                  bubbleX - bubbleW / 2,
+                  bubbleY - bubbleH / 2,
+                  bubbleW,
+                  bubbleH,
+                  12
+                );
+                topG.strokeRoundedRect(
+                  bubbleX - bubbleW / 2,
+                  bubbleY - bubbleH / 2,
+                  bubbleW,
+                  bubbleH,
+                  12
+                );
+                const tx = bubbleX - bubbleW / 2;
+                const ty = bubbleY + bubbleH / 4;
+                topG.fillStyle(0xffffff, 0.98 * alpha);
+                topG.beginPath();
+                topG.moveTo(tx, ty);
+                topG.lineTo(tx - tailW, ty + tailH * 0.5);
+                topG.lineTo(tx, ty + tailH);
+                topG.closePath();
+                topG.fillPath();
+                topG.lineStyle(1, 0xe9e0ff, 0.95 * alpha);
+                topG.strokeTriangle(
+                  tx,
+                  ty,
+                  tx - tailW,
+                  ty + tailH * 0.5,
+                  tx,
+                  ty + tailH
+                );
+              }
+
+              // compute glass dimensions (we'll use these for the liquid and for the clear image size)
+              const baseGlassW = Math.min(110, bubbleW * 0.9);
+              const baseGlassH = Math.min(130, bubbleH * 0.9);
+              const actualFactor =
+                this.GLASS_SIZE_FACTOR * clamp(scaleProgress, 0, 1);
+              const glassW = Math.max(2, baseGlassW * actualFactor);
+              const glassH = Math.max(2, baseGlassH * actualFactor);
+
+              // draw the liquid inside the bubble (on topG so it sits behind the clear image which is a sprite)
+              if (alpha > 0.01) {
+                const targetHex = this.mixColors(this.currentOrder);
+                const targetNum =
+                  Phaser.Display.Color.HexStringToColor(targetHex).color;
+                const inset = Math.max(1, 4 * actualFactor);
+
+                // ADJUST: LIQUID SIZE MULTIPLIER
+                // To change how large the liquid appears inside the clear bottle, adjust LIQ_SCALE.
+                // Set LIQ_SCALE = 0.5 to make the liquid 50% smaller (width & height).
+                const LIQ_SCALE = 0.5;
+
+                const liqW = Math.max(2, (glassW - inset * 2) * LIQ_SCALE);
+                const liqH = Math.max(2, glassH * 0.7 * LIQ_SCALE);
+                const liqY =
+                  bubbleY +
+                  glassH / 2 -
+                  liqH / 2 -
+                  Math.max(1, 4 * actualFactor);
+                topG.fillStyle(targetNum, 0.96 * alpha);
+                topG.fillEllipse(bubbleX, liqY, liqW, liqH);
+
+                // subtle shadow/edge under liquid for depth
+                topG.fillStyle(0x000000, 0.06 * alpha);
+                topG.fillEllipse(
+                  bubbleX,
+                  liqY + liqH / 2 - Math.max(1, 4 * actualFactor),
+                  liqW * 0.86,
+                  Math.max(2, 6 * actualFactor)
+                );
+              }
+
+              // If bubbleImage is available, show it above the liquid so the transparent parts reveal the liquid
+              if (this.bubbleImage) {
+                if (alpha > 0.01 && glassW > 3 && glassH > 3) {
+                  this.bubbleImage.setVisible(true);
+                  this.bubbleImage.setPosition(bubbleX, bubbleY);
+                  // set display size to match computed glass dims
+                  this.bubbleImage.setDisplaySize(glassW, glassH);
+                  this.bubbleImage.setAlpha(alpha);
+                } else {
+                  this.bubbleImage.setVisible(false);
+                  this.bubbleImage.setAlpha(0);
+                }
+              } else {
+                // fallback: if image missing, draw a simple glass outline (keeps compatibility)
+                if (alpha > 0.01) {
+                  const radius = Math.max(2, 10 * actualFactor);
+                  topG.fillStyle(0xffffff, 0.12 * alpha);
+                  topG.fillRoundedRect(
+                    bubbleX - glassW / 2,
+                    bubbleY - glassH / 2,
+                    glassW,
+                    glassH,
+                    radius
+                  );
+                  topG.lineStyle(
+                    Math.max(1, 2 * actualFactor),
+                    0xded6f5,
+                    0.9 * alpha
+                  );
+                  topG.strokeRoundedRect(
+                    bubbleX - glassW / 2,
+                    bubbleY - glassH / 2,
+                    glassW,
+                    glassH,
+                    radius
+                  );
+                }
+              }
+            } catch (e) {
+              // ignore drawing errors
+            }
+
+            // Always render the order as potion images (create or position orderSprites)
+            for (let i = 0; i < this.currentOrder.length; i++) {
+              const id = this.currentOrder[i];
+              const key = "pot_" + id;
+              let img =
+                this.orderSprites && this.orderSprites[i]
+                  ? this.orderSprites[i]
+                  : null;
+
+              if (img) {
+                img.setPosition(WIDTH - 20, cpos.y + i * 44 - 20);
+                img.setDisplaySize(32, 32);
+                img.setDepth(22);
+              }
+            }
+
+            // liquid (draw on liquidG so it's behind cauldron)
+            const ca = this.positions.cauldron;
+            const liqR = ca.r * 1.27;
+            const liqX = WIDTH / 2;
+            const liqY = HEIGHT - 178;
+            const mxColor = Phaser.Display.Color.HexStringToColor(
+              this.mixture.length ? this.mixColors(this.mixture) : "#2b2b2b"
+            ).color;
+            liquidG.fillStyle(mxColor, 0.9);
+            liquidG.fillEllipse(liqX, liqY, liqR * 2, liqR * 0.8);
+
+            // draw cauldronParticles (steam from mixing) on topG (above cauldron)
+            this.cauldronParticles.forEach((p) => {
+              const alpha = clamp(p.a, 0, 1);
+              const color =
+                typeof p.c === "number"
+                  ? p.c
+                  : Phaser.Display.Color.HexStringToColor("#ffffff").color;
+              topG.fillStyle(color, alpha);
+              topG.fillEllipse(p.x, p.y, p.s * 2, p.s * 1.4);
+            });
+
+            // draw potionParticles (from clicking potions) on topG as small colored puffs
+            this.potionParticles.forEach((p) => {
+              const alpha = clamp(p.a, 0, 1);
+              const color =
+                typeof p.c === "number"
+                  ? p.c
+                  : Phaser.Display.Color.HexStringToColor("#ffffff").color;
+              topG.fillStyle(color, alpha);
+              topG.fillEllipse(p.x, p.y, p.s * 1.6, p.s * 1.2);
+            });
+
+            // update mistake sprites tint based on mistakes
+            if (this.mistakeSprites && this.mistakeSprites.length) {
+              for (let i = 0; i < this.mistakeSprites.length; i++) {
+                const ms = this.mistakeSprites[i];
+                if (i < this.mistakes) {
+                  // already hidden by tween; tint if still visible for consistency
+                  if (ms.visible) ms.setTint(0xb33333);
+                } else {
+                  ms.clearTint();
+                }
+              }
+            }
+
+            const barW = Math.min(140, width * 0.36);
+            const bx = this.SAFE_MARGIN;
+            const by =
+              this.SAFE_MARGIN +
+              this.TOP_SHIFT +
+              Math.max(28, Math.floor(width * 0.06));
+            topG.lineStyle(4, 0xefe3ff, 1);
+            topG.strokeRoundedRect(bx, by, barW, 10, 6);
+            topG.fillStyle(0xff9b9b, 1);
+            topG.fillRect(
+              bx + 2,
+              by + 2,
+              (barW - 4) * clamp(this.angry, 0, 1),
+              6
+            );
+
+            this.scoreSparks.forEach((s) => {
+              topG.fillStyle(s.c, s.a);
+              topG.fillEllipse(
+                this.SAFE_MARGIN + 70 + s.x,
+                this.SAFE_MARGIN + this.TOP_SHIFT + 8 + s.y,
+                s.s * 2,
+                s.s * 1.2
+              );
+            });
+          }
+
+          update(time, delta) {
+            const dt = Math.min(0.05, delta / 1000);
+            if (!this.running) return;
+            this.angry += this.angryRate * dt;
+
+            // update cauldronParticles
+            this.cauldronParticles = this.cauldronParticles.filter(
+              (p) => p.life > 0
+            );
+            this.cauldronParticles.forEach((p) => {
+              p.life -= dt;
+              p.y -= p.vy * dt * 40;
+              p.x += p.vx * dt * 30;
+              p.a = p.life / p.maxLife;
+            });
+
+            // update potionParticles
+            this.potionParticles = this.potionParticles.filter(
+              (p) => p.life > 0
+            );
+            this.potionParticles.forEach((p) => {
+              p.life -= dt;
+              p.y -= p.vy * dt * 40;
+              p.x += p.vx * dt * 30;
+              p.a = p.life / p.maxLife;
+            });
+
+            this.scoreSparks = this.scoreSparks.filter((s) => s.life > 0);
+            this.scoreSparks.forEach((s) => {
+              s.life -= dt;
+              s.y -= 6 * dt;
+              s.x += s.vx * dt * 20;
+              s.a = s.life / s.maxLife;
+            });
+
+            if (this.scoreText) this.scoreText.setText("Score: " + this.score);
+
+            // when the impatient timer fills, remove one heart (via loseLife) and do NOT immediately bypass the heart animation;
+            // the game will only end when hearts are exhausted (handled inside loseLife)
+            if (this.angry >= 1) {
+              // reset impatience immediately to avoid multiple triggers
+              this.angry = 0;
+              // unified life loss handles particles, animations, spawn/end logic
+              this.loseLife({ playSfx: true });
+            }
+
+            // update sprites positions if necessary (layout static in this build)
+            this.drawScene();
+          }
+        }
+
+        const config = {
+          type: Phaser.CANVAS,
+          canvas: canvas,
+          backgroundColor: 0xffffff,
+          parent: "screen",
+          width: WIDTH,
+          height: HEIGHT,
+          scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+          },
+          pixelArt: true,
+          scene: [BootScene, LoadingScene, SplashScene, MainScene],
+        };
+
+        const game = new Phaser.Game(config);
+
+        // Farcade global listeners (hook into activeScene)
+        if (FAR && FAR.on) {
+          try {
+            FAR.on("play_again", () => {
+              try {
+                // if MainScene already running, reset it; otherwise start MainScene
+                if (
+                  game &&
+                  game.scene &&
+                  game.scene.isActive &&
+                  game.scene.isActive("MainScene")
+                ) {
+                  if (activeScene && activeScene.resetState) {
+                    activeScene.resetState();
+                    activeScene.running = true;
+                  }
+                } else {
+                  // start MainScene (this will create it fresh and set activeScene)
+                  try {
+                    game.scene.start("MainScene");
+                  } catch (e) {
+                    // fallback: if start fails, try to wake
+                    try {
+                      game.scene.wake("MainScene");
+                    } catch (e2) {}
+                  }
+                }
+              } catch (e) {}
+            });
+            FAR.on("toggle_mute", ({ isMuted }) => {
+              const muted = !!isMuted;
+              try {
+                if (game && game.sound) game.sound.mute = muted;
+              } catch (e) {}
+            });
+          } catch (e) {}
+        }
+
+        // Minimal debug API
+        window.__wizard_game = {
+          resetState: () => {
+            if (activeScene && activeScene.resetState) {
+              activeScene.resetState();
+              activeScene.running = true;
+            } else {
+              try {
+                game.scene.start("MainScene");
+              } catch (e) {}
+            }
+          },
+          spawnOrder: () => {
+            if (activeScene && activeScene.spawnOrder) activeScene.spawnOrder();
+          },
+        };
+      })();
+    </script>
+  </body>
+</html>

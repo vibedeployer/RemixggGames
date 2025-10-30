@@ -1,0 +1,2085 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Survivor: Zombies (Mobile Enhanced)</title>
+    <style>
+      body {
+        margin: 0;
+        background: #111;
+        color: #ddd;
+        font-family: Arial, sans-serif;
+        user-select: none; /* Prevent text selection */
+        touch-action: manipulation; /* Prevent zoom/scroll on mobile */
+      }
+      #game-container {
+        display: block;
+        margin: 0 auto;
+      }
+    </style>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.55.2/dist/phaser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@0.2.1/dist/index.min.js"></script>
+  </head>
+  <body>
+    <div id="game-container"></div>
+
+    <script>
+      // Mobile-Enhanced Zombie Survival Game
+      const WIDTH = 400;
+      const HEIGHT = 600;
+      const MAP_PAD = 1000;
+
+      let cursors, keys;
+      let loadingText;
+      let player,
+        gun,
+        bullets,
+        lastFired = 0;
+      let currentGun = "pistol";
+      let zombies;
+      let moneyGroup;
+      let shop, shopMenu, stimmyBtn, shotgunBtn, minigunBtn;
+      let isNearShop = false;
+      let navbarBg,
+        madeByText,
+        heartImage,
+        scoreText,
+        cashText,
+        dayNightImage,
+        timerText,
+        waveText;
+      let health = 5;
+      let score = 0;
+      let cash = 0;
+      let kills = 0;
+      let canBeHit = true;
+      let spawnTimer = 0;
+      let waveTimer = 0;
+      let waveActive = false;
+      let waveNumber = 1;
+      let gameOver = false;
+      let playerContainer;
+      let healthBar;
+      let joystickBase, joystickHandle;
+      let joystickActive = false;
+      let joystickPointerId = null;
+      let shopPointerId = null;
+      let joystickBaseX, joystickBaseY;
+      let maxJoystickDistance = 50;
+      let rt;
+      let startGameHintBg, startGameHintText;
+      let endStatsHeading, endStatsText, endContinueBtn, endbg, endbgblack;
+      let footstepsTimer = 0;
+      let hasPlayedShopVoice = false;
+      let hasPlayedDeathscream = false;
+
+      // Mobile-specific variables
+      let autoShootEnabled = false;
+      let autoShootRange = 150;
+      let lastAutoShot = 0;
+      let autoShootBtn, autoShootIcon;
+      let manualShootBtn, manualShootIcon;
+
+      const uiTextStyle = {
+        fontFamily: '"Press Start 2P"',
+        fontSize: "11px",
+        fill: "#ffffff",
+      };
+
+      // Auto-shooting system
+      function updateAutoShoot(scene, time) {
+        if (!autoShootEnabled || gameOver || shopMenu.visible) return;
+
+        const fireRate = currentGun === "shotgun" ? 400 : 180;
+        if (time - lastAutoShot < fireRate) return;
+
+        // Find nearest zombie within range
+        let nearestZombie = null;
+        let nearestDistance = autoShootRange;
+
+        zombies.children.entries.forEach((zombie) => {
+          if (!zombie.active) return;
+
+          const distance = Phaser.Math.Distance.Between(
+            player.x,
+            player.y,
+            zombie.x,
+            zombie.y
+          );
+
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestZombie = zombie;
+          }
+        });
+
+        if (nearestZombie) {
+          shoot(scene, nearestZombie.x, nearestZombie.y);
+          lastAutoShot = time;
+        }
+      }
+
+      function toggleAutoShoot() {
+        autoShootEnabled = !autoShootEnabled;
+        updateAutoShootUI();
+        return autoShootEnabled;
+      }
+
+      function updateAutoShootUI() {
+        if (autoShootIcon) {
+          autoShootIcon.setFill(autoShootEnabled ? "#00ff00" : "#ff0000");
+          autoShootIcon.setText(autoShootEnabled ? "AUTO" : "MAN");
+        }
+        if (manualShootBtn && manualShootIcon) {
+          manualShootBtn.setVisible(!autoShootEnabled);
+          manualShootIcon.setVisible(!autoShootEnabled);
+        }
+      }
+
+      function createMobileUI(scene) {
+        const { width, height } = scene.cameras.main;
+
+        // Auto-shoot toggle button
+        autoShootBtn = scene.add
+          .circle(width - 70, height - 120, 25, 0x444444, 0.8)
+          .setScrollFactor(0)
+          .setDepth(100)
+          .setInteractive()
+          .setStrokeStyle(2, 0x666666)
+          .setVisible(false);
+
+        autoShootIcon = scene.add
+          .text(width - 70, height - 120, "AUTO", {
+            fontFamily: '"Press Start 2P"',
+            fontSize: "7px",
+            fill: "#00ff00",
+          })
+          .setOrigin(0.5)
+          .setScrollFactor(0)
+          .setDepth(101)
+          .setVisible(false);
+
+        autoShootBtn.on("pointerdown", () => {
+          toggleAutoShoot();
+          // Button feedback animation
+          scene.tweens.add({
+            targets: autoShootBtn,
+            scaleX: 1.2,
+            scaleY: 1.2,
+            duration: 100,
+            yoyo: true,
+            ease: "Power2",
+          });
+
+          if (window.FarcadeSDK) {
+            window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+          }
+        });
+
+        // Manual shoot button (hidden by default)
+        manualShootBtn = scene.add
+          .circle(width - 70, height - 70, 30, 0x660000, 0.8)
+          .setScrollFactor(0)
+          .setDepth(100)
+          .setInteractive()
+          .setStrokeStyle(2, 0x880000)
+          .setVisible(false);
+
+        manualShootIcon = scene.add
+          .text(width - 70, height - 70, "FIRE", {
+            fontFamily: '"Press Start 2P"',
+            fontSize: "7px",
+            fill: "#ffffff",
+          })
+          .setOrigin(0.5)
+          .setScrollFactor(0)
+          .setDepth(101)
+          .setVisible(false);
+
+        manualShootBtn.on("pointerdown", () => {
+          if (!gameOver && !shopMenu.visible) {
+            // Find nearest zombie to shoot at
+            let target = findNearestZombie();
+            if (target) {
+              shoot(scene, target.x, target.y);
+            }
+          }
+
+          // Button feedback
+          scene.tweens.add({
+            targets: manualShootBtn,
+            scaleX: 1.1,
+            scaleY: 1.1,
+            duration: 100,
+            yoyo: true,
+            ease: "Power2",
+          });
+        });
+
+        updateAutoShootUI();
+      }
+
+      function findNearestZombie() {
+        let nearestZombie = null;
+        let nearestDistance = Infinity;
+
+        zombies.children.entries.forEach((zombie) => {
+          if (!zombie.active) return;
+
+          const distance = Phaser.Math.Distance.Between(
+            player.x,
+            player.y,
+            zombie.x,
+            zombie.y
+          );
+
+          if (distance < nearestDistance) {
+            nearestDistance = distance;
+            nearestZombie = zombie;
+          }
+        });
+
+        return nearestZombie;
+      }
+
+      function createImprovedJoystick(scene) {
+        joystickBaseX = 70;
+        joystickBaseY = HEIGHT - 70;
+        maxJoystickDistance = 40;
+
+        // Enhanced joystick base with better visuals
+        const joystickGraphics = scene.add.graphics();
+        joystickGraphics.fillStyle(0x666666, 0.3);
+        joystickGraphics.fillCircle(
+          joystickBaseX,
+          joystickBaseY,
+          maxJoystickDistance + 10
+        );
+        joystickGraphics.lineStyle(2, 0x999999, 0.5);
+        joystickGraphics.strokeCircle(
+          joystickBaseX,
+          joystickBaseY,
+          maxJoystickDistance + 10
+        );
+        joystickGraphics.setScrollFactor(0).setDepth(100);
+
+        // Improved joystick handle
+        joystickHandle = scene.add
+          .circle(joystickBaseX, joystickBaseY, 18, 0x999999, 0.8)
+          .setScrollFactor(0)
+          .setDepth(101)
+          .setStrokeStyle(2, 0xbbbbbb, 0.8);
+
+        // Larger touch area for easier interaction
+        const joystickZone = scene.add
+          .zone(joystickBaseX - 80, joystickBaseY - 80, 160, 160)
+          .setOrigin(0, 0)
+          .setInteractive()
+          .setScrollFactor(0);
+
+        joystickZone.on("pointerdown", (pointer) => {
+          if (!joystickActive) {
+            joystickActive = true;
+            joystickPointerId = pointer.id;
+
+            // Visual feedback - make joystick more opaque
+            joystickGraphics.setAlpha(0.8);
+            joystickHandle.setAlpha(1);
+
+            if (window.FarcadeSDK) {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            }
+          }
+        });
+
+        scene.input.on("pointermove", (pointer) => {
+          if (joystickActive && pointer.id === joystickPointerId) {
+            const dx = pointer.x - joystickBaseX;
+            const dy = pointer.y - joystickBaseY;
+            const distance = Math.hypot(dx, dy);
+
+            // Dead zone of 8 pixels
+            if (distance > 8) {
+              const constrainedDistance = Math.min(
+                distance,
+                maxJoystickDistance
+              );
+              const angle = Math.atan2(dy, dx);
+
+              joystickHandle.x =
+                joystickBaseX + Math.cos(angle) * constrainedDistance;
+              joystickHandle.y =
+                joystickBaseY + Math.sin(angle) * constrainedDistance;
+
+              // Apply movement with intensity scaling
+              const intensity = constrainedDistance / maxJoystickDistance;
+              player.setVelocity(
+                Math.cos(angle) * intensity * player.speed,
+                Math.sin(angle) * intensity * player.speed
+              );
+            } else {
+              // Within dead zone
+              joystickHandle.setPosition(joystickBaseX, joystickBaseY);
+              player.setVelocity(0, 0);
+            }
+          }
+        });
+
+        scene.input.on("pointerup", (pointer) => {
+          if (pointer.id === joystickPointerId) {
+            joystickActive = false;
+            joystickPointerId = null;
+
+            // Visual feedback - fade joystick
+            joystickGraphics.setAlpha(0.3);
+            joystickHandle.setAlpha(0.7);
+
+            // Smooth return to center
+            scene.tweens.add({
+              targets: joystickHandle,
+              x: joystickBaseX,
+              y: joystickBaseY,
+              duration: 150,
+              ease: "Power2",
+            });
+
+            player.setVelocity(0, 0);
+          }
+        });
+
+        return { graphics: joystickGraphics, handle: joystickHandle };
+      }
+
+      function updateShopBtns() {
+        const weapons = ["pistol", "shotgun", "minigun"];
+        const buttons = [null, shotgunBtn, minigunBtn];
+        const costs = [0, 200, 500];
+
+        buttons.forEach((btn, i) => {
+          if (!btn) return;
+          if (cash < costs[i] || currentGun === weapons[i]) {
+            btn.setTint(0x555555);
+            btn.disableInteractive();
+          } else {
+            btn.clearTint();
+            btn.setInteractive();
+          }
+        });
+
+        // Health button logic
+        if (cash < 50 || health >= 5) {
+          stimmyBtn.setTint(0x555555);
+          stimmyBtn.disableInteractive();
+        } else {
+          stimmyBtn.clearTint();
+          stimmyBtn.setInteractive();
+        }
+      }
+
+      let gameTimeMinutes = 9 * 60;
+      let isDay = true;
+      let lastIsDay = true;
+
+      function createCircleTexture(scene, key, radius, fillColor, strokeColor) {
+        const g = scene.make.graphics({ x: 0, y: 0, add: false });
+        g.fillStyle(fillColor, 1);
+        g.fillCircle(radius, radius, radius);
+        g.lineStyle(Math.max(2, Math.round(radius * 0.12)), strokeColor, 1);
+        g.strokeCircle(radius, radius, radius);
+        g.generateTexture(key, radius * 2 + 2, radius * 2 + 2);
+        g.destroy();
+      }
+
+      function shoot(scene, tx, ty) {
+        const now = scene.time.now;
+        let fireRate, bulletCount, bulletSpeed, bulletLifetime, soundKey;
+
+        switch (currentGun) {
+          case "pistol":
+            fireRate = 180;
+            bulletCount = 1;
+            bulletSpeed = 900;
+            bulletLifetime = 180;
+            soundKey = "pistolshoot1";
+            break;
+          case "shotgun":
+            fireRate = 400;
+            bulletCount = 3;
+            bulletSpeed = 900;
+            bulletLifetime = 150;
+            soundKey = "pistolshoot1";
+            break;
+          case "minigun":
+            fireRate = 60;
+            bulletCount = 1;
+            bulletSpeed = 1200;
+            bulletLifetime = 200;
+            soundKey = "minigunshoot";
+            break;
+
+          default:
+            return;
+        }
+
+        if (now - lastFired < fireRate) return;
+        lastFired = now;
+
+        scene.sound.play(soundKey, { volume: 0.1 });
+
+        const baseAngle = Phaser.Math.Angle.Between(player.x, player.y, tx, ty);
+
+        for (let i = 0; i < bulletCount; i++) {
+          const angle = baseAngle + (Math.random() - 0.5) * 0.1; // slight spread
+          const bullet = bullets.get(player.x, player.y, "bullet");
+          if (!bullet) continue;
+
+          bullet.setActive(true);
+          bullet.setVisible(true);
+          bullet.body.reset(player.x, player.y);
+          bullet.setDepth(1);
+          bullet.setRotation(angle);
+
+          scene.physics.velocityFromRotation(
+            angle,
+            bulletSpeed,
+            bullet.body.velocity
+          );
+
+          scene.time.addEvent({
+            delay: bulletLifetime,
+            callback: () => {
+              if (bullet && bullet.body) bullet.destroy();
+            },
+          });
+        }
+      }
+
+      // Keep all other existing functions (bulletHitsZombie, zombieHitsPlayer, etc.)
+      function bulletHitsZombie(bullet, zombie) {
+        if (!bullet.active || !zombie.active) return;
+        bullet.destroy();
+        zombie.health -= 1;
+        const zombieHitSounds = [
+          "zombiehit1",
+          "zombiehit2",
+          "zombiehit3",
+          "zombiehit4",
+        ];
+        const randomSound =
+          zombieHitSounds[Math.floor(Math.random() * zombieHitSounds.length)];
+        this.sound.play(randomSound, {
+          volume: 1,
+          detune: Phaser.Math.Between(-70, 70),
+        });
+        zombie.setTint(0xffffff);
+        zombie.scene.time.addEvent({
+          delay: 80,
+          callback: () => zombie.clearTint(),
+        });
+        if (zombie.health <= 0) {
+          pointsForKill(zombie.scene, zombie);
+          this.sound.play("bonecrack", {
+            volume: 0.3,
+            detune: Phaser.Math.Between(-70, 70),
+          });
+          kills++;
+        } else {
+          const dir = Phaser.Math.Angle.Between(
+            bullet.x,
+            bullet.y,
+            zombie.x,
+            zombie.y
+          );
+          zombie.body.velocity.x += Math.cos(dir) * 80;
+          zombie.body.velocity.y += Math.sin(dir) * 80;
+        }
+      }
+
+      function bulletHitsBuilding(bullet, tile) {
+        if (!bullet.active) return;
+        const p = bullet.scene.add.particles("yellowParticle");
+        const emitter = p.createEmitter({
+          x: bullet.x,
+          y: bullet.y,
+          speed: { min: 80, max: 200 },
+          angle: { min: 0, max: 360 },
+          gravityY: 0,
+          lifespan: 400,
+          quantity: 12,
+          scale: { start: 0.9, end: 0 },
+          on: false,
+        });
+        emitter.explode(12, bullet.x, bullet.y);
+        bullet.destroy();
+      }
+
+      function zombieHitsPlayer(playerObj, zombie) {
+        if (!canBeHit || !zombie.active || !playerObj.active) return;
+        canBeHit = false;
+        playerObj._invulnTimer = 1200;
+        playerObj.setTint(0xff4444);
+        health -= 1;
+        this.sound.play("playerhit", {
+          volume: 0.5,
+          detune: Phaser.Math.Between(-70, 70),
+        });
+        window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+        zombie.scene.cameras.main.shake(180, 0.01);
+        const angle = Phaser.Math.Angle.Between(
+          zombie.x,
+          zombie.y,
+          playerObj.x,
+          playerObj.y
+        );
+        playerObj.body.velocity.x += Math.cos(angle) * 180;
+        playerObj.body.velocity.y += Math.sin(angle) * 180;
+      }
+
+      function spawnZombie(scene) {
+        const edge = Phaser.Math.Between(0, 3);
+        let x, y;
+        const margin = Math.max(WIDTH, HEIGHT) * 0.6;
+        if (edge === 0) {
+          x = Phaser.Math.Between(player.x - margin, player.x + margin);
+          y = player.y - margin - Phaser.Math.Between(80, 220);
+        } else if (edge === 1) {
+          x = player.x + margin + Phaser.Math.Between(80, 220);
+          y = Phaser.Math.Between(player.y - margin, player.y + margin);
+        } else if (edge === 2) {
+          x = Phaser.Math.Between(player.x - margin, player.x + margin);
+          y = player.y + margin + Phaser.Math.Between(80, 220);
+        } else {
+          x = player.x - margin - Phaser.Math.Between(80, 220);
+          y = Phaser.Math.Between(player.y - margin, player.y + margin);
+        }
+
+        const zombieTypes = [];
+        zombieTypes.push({ type: "normal", weight: 50 });
+
+        if (waveNumber >= 3) {
+          zombieTypes.push({ type: "kid", weight: 25 });
+        }
+
+        if (waveNumber >= 4) {
+          zombieTypes.push({ type: "giant", weight: 15 });
+        }
+
+        if (waveNumber >= 5) {
+          zombieTypes.push({ type: "female", weight: 10 });
+        }
+
+        const totalWeight = zombieTypes.reduce((sum, z) => sum + z.weight, 0);
+        let pick = Phaser.Math.Between(1, totalWeight);
+        let chosenType = "normal";
+
+        for (const ztype of zombieTypes) {
+          pick -= ztype.weight;
+          if (pick <= 0) {
+            chosenType = ztype.type;
+            break;
+          }
+        }
+
+        let z;
+        switch (chosenType) {
+          case "normal":
+            z = scene.physics.add.sprite(x, y, "zombie");
+            z.setTexture("zombie");
+            z.zombieTypeSpawned = "normal";
+            z.health = Phaser.Math.Between(1, 2);
+            z.baseSpeed =
+              Phaser.Math.Between(30, 60) +
+              Math.min(60, Math.floor(score / 6)) +
+              waveNumber * 5;
+            z.clearTint();
+            break;
+          case "kid":
+            z = scene.physics.add.sprite(x, y, "zombiekid");
+            z.setTexture("zombiekid");
+            z.zombieTypeSpawned = "kid";
+            z.health = 1;
+            z.baseSpeed =
+              Phaser.Math.Between(50, 70) +
+              Math.min(60, Math.floor(score / 6)) +
+              waveNumber * 6;
+            break;
+          case "giant":
+            z = scene.physics.add.sprite(x, y, "zombiegiant");
+            z.setTexture("zombiegiant");
+            z.zombieTypeSpawned = "giant";
+            z.health = Phaser.Math.Between(5, 8);
+            z.baseSpeed = Phaser.Math.Between(20, 40) + waveNumber * 5;
+            break;
+          case "female":
+            z = scene.physics.add.sprite(x, y, "zombiefemale");
+            z.setTexture("zombiefemale");
+            z.zombieTypeSpawned = "female";
+            z.health = 1;
+            z.baseSpeed = Phaser.Math.Between(60, 90) + waveNumber * 7;
+            break;
+        }
+
+        z.setDepth(1);
+        z.setCollideWorldBounds(true);
+        z.setBounce(0.1);
+        z.setMask(scene.zombieMask);
+        zombies.add(z);
+      }
+
+      function pointsForKill(scene, zombie) {
+        const p = scene.add.particles("blood");
+        const emitter = p.createEmitter({
+          x: zombie.x,
+          y: zombie.y,
+          speed: { min: 80, max: 200 },
+          angle: { min: 0, max: 360 },
+          gravityY: 0,
+          lifespan: 400,
+          quantity: 12,
+          scale: { start: 0.9, end: 0 },
+          on: false,
+        });
+        emitter.explode(12, zombie.x, zombie.y);
+        if (zombie.zombieTypeSpawned === "normal") score += 5;
+        if (zombie.zombieTypeSpawned === "kid") score += 10;
+        if (zombie.zombieTypeSpawned === "female") score += 20;
+        if (zombie.zombieTypeSpawned === "giant") score += 25;
+        const money = moneyGroup.create(zombie.x, zombie.y, "money");
+        if (money) {
+          money.setDepth(2);
+          money.setMask(scene.zombieMask);
+          money.play("money-fall");
+          money.on("animationcomplete", () => {
+            money.anims.stop();
+            money.setFrame(4);
+          });
+        }
+        zombie.destroy();
+        if (waveActive && Phaser.Math.Between(0, 100) < 18) spawnZombie(scene);
+      }
+
+      function collectMoney(player, moneyItem) {
+        cash += Phaser.Math.Between(1, 3);
+        moneyItem.destroy();
+        updateShopBtns();
+        this.sound.play("moneypickup", { volume: 0.5 });
+      }
+
+      function finishGame(scene) {
+        gameOver = true;
+        window.FarcadeSDK.singlePlayer.actions.gameOver({ score: score });
+      }
+
+      function restart(scene) {
+        zombies.clear(true, true);
+        bullets.clear(true, true);
+        moneyGroup.clear(true, true);
+        health = 5;
+        score = 0;
+        cash = 0;
+        kills = 0;
+        currentGun = "pistol";
+        canBeHit = true;
+        gameOver = false;
+        waveActive = false;
+        waveTimer = 0;
+        spawnTimer = 0;
+        waveNumber = 0;
+        gameTimeMinutes = 9 * 60;
+        autoShootEnabled = false;
+        updateAutoShootUI();
+        scene.cameras.main.fadeIn(300, 0, 0, 0);
+        player.enableBody(true, 0, 0, true, true);
+        player.x = 450;
+        player.y = 550;
+        player.clearTint();
+        player._invulnTimer = 0;
+        gun.setTexture("gun");
+        gun.setOrigin(0.35, 0.5);
+        if (playerContainer) playerContainer.setPosition(player.x, player.y);
+        if (scene.vision) scene.vision.setScale(2);
+        rt.visible = true;
+        dayNightImage.setTexture("sun");
+        timerText.setText("");
+        joystickActive = false;
+        joystickPointerId = null;
+        if (joystickHandle)
+          joystickHandle.setPosition(joystickBaseX, joystickBaseY);
+        hasPlayedDeathscream = false;
+      }
+
+      // Keep all existing scene classes but add mobile improvements to GameScene
+
+      class BootScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "BootScene" });
+        }
+        preload() {
+          // Load splash bg PNG
+          this.load.image(
+            "splashbg",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d49b9f90-d0b7-420d-9c69-0758ead52b36/bgsplash-nA7kPSEUIWffulTLvComEAwMCLoSDq.png?EPWH"
+          );
+
+          this.load.spritesheet(
+            "vibedeploy", // same key the old code used
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Black%20and%20White%20Skull%20Game%20Over%20Animated%20Logo-uiFuD29sTrgWdVjHeCe4s04pOb9GmY.png?XwIX",
+            { frameWidth: 100, frameHeight: 100 }
+          );
+
+          this.load.audio(
+            "openingsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d49b9f90-d0b7-420d-9c69-0758ead52b36/scream-RuiXF9iytmzRnMp2mx3oOWgTmq0vLm.mp3?vVNt"
+          );
+
+          this.load.image(
+            "logo",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d49b9f90-d0b7-420d-9c69-0758ead52b36/logo-OVDlYLdQy6P3jVCZ7bgwQyDJXlpkOd.png?fNSj"
+          );
+          this.load.image(
+            "playbutton",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/playbutton-Kw2LeeEVM6ghsa4d5oprw2rNjU6eWa.png?8XSp"
+          );
+
+          /* 2.  Declare the animations once, right here in preload() */
+          this.load.on("complete", () => {
+            // runs once everything is loaded
+            this.anims.create({
+              key: "vibedeployplay",
+              frames: this.anims.generateFrameNumbers("vibedeploy", {
+                start: 0,
+                end: 5,
+              }),
+              frameRate: 12,
+              repeat: -1,
+            });
+
+            /* add more animations if you have extra rows / clips */
+            // this.anims.create({ key: 'run', frames: this.anims.generateFrameNumbers('player', { start: 8, end: 15 }), frameRate: 16, repeat: -1 });
+          });
+        }
+
+        create() {
+          const { width, height } = this.cameras.main;
+          this.cameras.main.setBackgroundColor("#000");
+          const vibedeploy = this.add.sprite(
+            width / 2,
+            height / 2,
+            "vibedeploy"
+          );
+          vibedeploy.setScale(2);
+          vibedeploy.play("vibedeployplay");
+
+          this.time.delayedCall(1500, () => {
+            this.cameras.main.fadeOut(500, 0, 0, 0); // 500 ms fade-to-black
+            this.cameras.main.once(
+              Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+              () => {
+                this.scene.start("LoadingScene"); // your next scene
+              }
+            );
+          });
+        }
+      }
+
+      class LoadingScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "LoadingScene" });
+        }
+
+        preload() {
+          this.loadFontPromise = document.fonts.load('16px "Press Start 2P"');
+
+          // Load all existing assets (keeping same URLs)
+          this.load.spritesheet(
+            "survivor",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/survivor32bit-RqyXAMHXt4t7yLOZLWrrt9PSvNYbnF.png?7NiA",
+            { frameWidth: 32, frameHeight: 32 }
+          );
+          this.load.image(
+            "gun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/gun16-qZAwAK5AGooegvxHDki1pMI0CkOEcW.png?cn7m"
+          );
+          this.load.image(
+            "shotgun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/shotgun-SifzbyaV7QrLqGYFsaVf3ChB8RvAds.png?ayZN"
+          );
+          this.load.image(
+            "minigun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d49b9f90-d0b7-420d-9c69-0758ead52b36/uzi-uJf2d3kTy4GEoL3tMh0e32pzeB77Vg.png?Dzv4"
+          );
+          this.load.image(
+            "flamethrower",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d49b9f90-d0b7-420d-9c69-0758ead52b36/uzi-uJf2d3kTy4GEoL3tMh0e32pzeB77Vg.png?Dzv4"
+          );
+
+          this.load.spritesheet(
+            "zombie",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/zombie-Tajm6hvxSNo1tGy3McDJfprjMbDu5V.png?u5qR",
+            { frameWidth: 32, frameHeight: 32 }
+          );
+          this.load.spritesheet(
+            "zombiekid",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/kidzombie-Q5Q69rclaTZP3qCaGKawjkZFyXG4Hp.png?GM1Z",
+            { frameWidth: 32, frameHeight: 32 }
+          );
+          this.load.spritesheet(
+            "zombiefemale",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/femalezombie-PEh2WpFFEwF4ohGJ0E1Z105LotUHhE.png?uBt5",
+            { frameWidth: 32, frameHeight: 32 }
+          );
+          this.load.spritesheet(
+            "zombiegiant",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/giantzombie-gllZQ9D5INrUazh8tpm9zgbDma6HYW.png?0LGo",
+            { frameWidth: 32, frameHeight: 32 }
+          );
+          this.load.spritesheet(
+            "money",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/money-Ljw95TeNZAss8qg90bGiCnWn1Hrbha.png?fIyq",
+            { frameWidth: 16, frameHeight: 16 }
+          );
+          this.load.spritesheet(
+            "shop",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/truckguy-EKmMSt0XgUhqaFEDqMQQeHSehBlhb9.png?s2cZ",
+            { frameWidth: 96, frameHeight: 48 }
+          );
+          this.load.spritesheet(
+            "radio",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/radio-27cMtZihsDAJyDWwvzJ9rGUAkBomfm.png?q3eq",
+            { frameWidth: 32, frameHeight: 32 }
+          );
+          this.load.spritesheet(
+            "shopclose",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/shoptruckleaving-1FToNB9EtVEdIWtIEuEZVT787ZXBNe.png?xQ11",
+            { frameWidth: 96, frameHeight: 48 }
+          );
+
+          // Load images
+          this.load.image(
+            "terrainsurvivor",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/terrainsurvivor-tr9cDqoXi3ZsnajJkw63YRA27iwEG7.png?B4eZ"
+          );
+          this.load.image(
+            "navbarbg",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/topbarfinal-bPdySb2grp0Sp7z1hZabV29u1kSNqY.png?6FcE"
+          );
+          this.load.image(
+            "shopbg",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/shopbg-vzL64tCxHOmX7nxuP20Xmr7i55aDlf.png?OfTq"
+          );
+          this.load.image(
+            "shopstimmy",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/stimmyr-UOikiWqGO7tozwZuYgINshpmlb59sp.png?1Jm2"
+          );
+          this.load.image(
+            "shopshotgun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/shotgunselect-pPNwe52zg9CSybsKrPNvuuZMMvMgsw.png?KI9s"
+          );
+          this.load.image(
+            "shopminigun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d49b9f90-d0b7-420d-9c69-0758ead52b36/uzziselect-b5wMZDSZchkhZrJd1WjNIUMnECQ02h.png?Wf3Q"
+          );
+          this.load.image(
+            "shopmflamethrower",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/shotgunselect-pPNwe52zg9CSybsKrPNvuuZMMvMgsw.png?KI9s"
+          );
+
+          this.load.image(
+            "sun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/sun-2PKsD5TpQoCkxFzHgHAZWDGm4h1ZAG.png?lJCt"
+          );
+          this.load.image(
+            "moon",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/moon-uuAxcauO6OhRLxOTzg1PQp0aM3gvTG.png?ZJXJ"
+          );
+          this.load.image(
+            "heart",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/heart-KrXOzbLpzjLTlIKs2Rz6UxoyWfDs7a.png?9oEu"
+          );
+          this.load.image(
+            "vision",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/fowfixed-JI2DInYTvPixjZxn0piXhFRpJdZddx.png?M3cZ"
+          );
+          this.load.image(
+            "exitbutton",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/exitbutton-I7LXTbu38lN7HDo2sbUp8Z7eXDKmMh.png?2iX4"
+          );
+
+          // Load tilemap
+          this.load.tilemapTiledJSON("map", "https://jsonkeeper.com/b/J1ADX");
+
+          // Create textures
+          createCircleTexture(this, "bullet", 3, 0xffff99, 0xcaa800);
+          createCircleTexture(this, "blood", 3, 0xff0000, 0xff0000);
+          createCircleTexture(this, "yellowParticle", 3, 0xffff00, 0xffff00);
+
+          // Load audio files
+          this.load.audio(
+            "music",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/horrormusic-N2NeuhKFMSnTEC2QS8mH5i21IpJxT0.mp3?SMuE"
+          );
+          this.load.audio(
+            "zombiehit1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/zombiehit1-kuLoy9tbmHPelcm3W3HKZhQIiSfjZL.mp3?DZxX"
+          );
+          this.load.audio(
+            "zombiehit2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/zombiehit2-RKwHbKDgMNAFVXtekazEaU6hXvzVnU.mp3?BTzC"
+          );
+          this.load.audio(
+            "zombiehit3",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/zombiehit3-yFVe9Mw4tKr44vdXBQh0VvBZ20G5Kh.mp3?R1jH"
+          );
+          this.load.audio(
+            "zombiehit4",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/zombiehit4-SLu6q1LsgnWrN1N0oitFQJWN1YwXJd.mp3?3a1v"
+          );
+          this.load.audio(
+            "running",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/Random7-CB1oXa48PhnBwG44dttWvFziEuOQwU.wav?urry"
+          );
+          this.load.audio(
+            "bonecrack",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/bonecrack-DfN5qb0yDW3JUUHT14Z8ohxthh4KKY.mp3?y8BD"
+          );
+          this.load.audio(
+            "pistolshoot1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/pistol1-Q4qOMUDw6yVjzmgFNgLwF2cxU9YhFI.mp3?ESeG"
+          );
+          this.load.audio(
+            "pistolshoot2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/pistol2-Utx4Ef7zwd6npjWyTZVHAdAOLxtwdY.mp3?epl3"
+          );
+          this.load.audio(
+            "pistolshoot3",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/pistol3-VYJIImVilGOQWmq6BMrjaDcAtXDg9L.mp3?NvWq"
+          );
+          this.load.audio(
+            "minigunshoot",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/pistol3-VYJIImVilGOQWmq6BMrjaDcAtXDg9L.mp3?NvWq"
+          );
+          this.load.audio(
+            "flameshoot",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/pistol3-VYJIImVilGOQWmq6BMrjaDcAtXDg9L.mp3?NvWq"
+          );
+          this.load.audio(
+            "shopkeeper1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/shopkeeper1-F6KHzhvUueHry2mVqblkw568Xw8MX4.mp3?nGit"
+          );
+          this.load.audio(
+            "shopkeeper2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/shopkeeper2-vfdkpiVLxKDkCmW3Pl5Ua5r21T5hGK.mp3?kzy1"
+          );
+          this.load.audio(
+            "shopkeeper3",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/shopkeeper3-b9aPyVEqlZqLOuG2Z6l395NBTStVbE.mp3?web2"
+          );
+          this.load.audio(
+            "cashregister",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/cashregister-4AJMBjrLlYxeREwfaKm4oeL5rqY7nE.mp3?FUtb"
+          );
+          this.load.audio(
+            "moneypickup",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/moneypickup-ctCEdsA6PnHHfphHGVURtza5VOoYRN.mp3?UIPR"
+          );
+          this.load.audio(
+            "playerhit",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/playegettinghit-D6HE3AYYHqz7ejMWzi1B16Z1OIcuhN.mp3?tH9K"
+          );
+          this.load.audio(
+            "playerdeath",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/deathscream-4VKlRAbXgXoJ6CvjEXX4CD53eRSTBM.mp3?3cJ1"
+          );
+          this.load.audio(
+            "radiostatic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/cec49d06-d4f3-41ea-90fc-fe0a5220600e/staticradio-4K6MkKQg6xMFFq3RQQfCbBH32nbdCk.mp3?eWvO"
+          );
+
+          // Optional: Add loading text or bar
+          const { width, height } = this.cameras.main;
+          this.cameras.main.fadeIn(500, 0, 0, 0);
+
+          this.sound.play("openingsound", { volume: 0.5 });
+          this.add
+            .image(width / 2, height / 2, "splashbg")
+            .setOrigin(0.5)
+
+            .setDisplaySize(width, height)
+            .setDepth(0);
+
+          loadingText = this.add
+            .text(width / 2, height / 2, "Loading...", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "12px",
+              fill: "#ffffff",
+            })
+            .setOrigin(0.5);
+
+          this.load.on("progress", (value) => {
+            loadingText.setText(`Loading... ${Math.round(value * 100)}%`);
+          });
+        }
+
+        async create() {
+          const { width, height } = this.cameras.main;
+          this.sound.play("openingsound", { volume: 0.7 });
+
+          if (loadingText) loadingText.destroy();
+
+          const logo = this.add
+            .image(width / 2, height / 2 - 120, "logo")
+            .setOrigin(0.5);
+
+          const startBtn = this.add
+            .image(width / 2, height / 2 + 50, "playbutton")
+            .setOrigin(0.5)
+            .setInteractive()
+            .setScale(1.5);
+
+          startBtn.on("pointerdown", () => {
+            if (this.sound.context.state === "suspended") {
+              this.sound.context.resume();
+            }
+            this.sound.play("playerdeath");
+            this.scene.start("GameScene");
+          });
+
+          this.tweens.add({
+            targets: startBtn,
+            y: startBtn.y + 5,
+            duration: 500,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+          });
+
+          const instructions = this.add
+            .text(
+              width / 2,
+              height - 180,
+              "Use joystick to move.\nAuto-aim. Fire to shoot.",
+              {
+                fontFamily: '"Press Start 2P"',
+                fontSize: "12px",
+                fill: "#ffffff",
+                align: "center",
+                lineSpacing: 6,
+              }
+            )
+            .setOrigin(0.5);
+
+          const instructionstwo = this.add
+            .text(
+              width / 2,
+              height - 120,
+              "Collect cash from dead zombies\nto buy health + upgrades during the day.\nKill zombies for points.\nSurvive the nights.",
+              {
+                fontFamily: '"Press Start 2P"',
+                fontSize: "8px",
+                fill: "#ffffff",
+                align: "center",
+                lineSpacing: 6,
+              }
+            )
+            .setOrigin(0.5);
+        }
+      }
+
+      class GameScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "GameScene" });
+        }
+
+        preload() {
+          this.load.scenePlugin(
+            "AnimatedTiles",
+            "https://raw.githubusercontent.com/nkholski/phaser-animated-tiles/master/dist/AnimatedTiles.js",
+            "animatedTiles",
+            "animatedTiles"
+          );
+        }
+
+        create() {
+          window.FarcadeSDK.singlePlayer.actions.ready();
+
+          // Disable context menu and add mobile optimizations
+          this.input.mouse.disableContextMenu();
+
+          // Set up map and layers
+          const map = this.make.tilemap({ key: "map" });
+          const tileset = map.addTilesetImage(
+            "terrainsurvivor",
+            "terrainsurvivor"
+          );
+          const groundLayer = map.createLayer("Ground", tileset, 0, 0);
+          const fenceLayer = map.createLayer("Fence", tileset, 0, 0);
+          fenceLayer.setCollisionByProperty({ collides: true });
+          const buildingsLayer = map
+            .createLayer("Buildings", tileset, 0, 0)
+            .setDepth(3);
+          buildingsLayer.setCollisionByProperty({ collides: true });
+          const buildingsAbove = map
+            .createLayer("BuildingsAbove", tileset, 0, 0)
+            .setDepth(4);
+          const treesLayer = map.createLayer("Trees", tileset, 0, 0);
+          const signsLayer = map.createLayer("Signs", tileset, 0, 0);
+          const fieldsLayer = map.createLayer("Fields", tileset, 0, 0);
+          const windmillLayer = map.createLayer("Windmill", tileset, 0, 0);
+          const accentsLayer = map.createLayer("Accents", tileset, 0, 0);
+          const carsLayer = map.createLayer("Cars", tileset, 0, 0);
+          carsLayer.setCollisionByProperty({ collides: true });
+
+          this.animatedTiles.init(map);
+          this.cameras.main.setBounds(
+            0,
+            0,
+            map.widthInPixels,
+            map.heightInPixels
+          );
+          this.physics.world.setBounds(
+            0,
+            0,
+            map.widthInPixels,
+            map.heightInPixels
+          );
+
+          // Create player
+          player = this.physics.add.sprite(450, 550, "survivor");
+          player.setCollideWorldBounds(true);
+          player.speed = 260;
+          player.setDepth(2);
+
+          // Create gun container
+          playerContainer = this.add.container(player.x, player.y);
+          gun = this.add.sprite(7, 15, "gun");
+          gun.setDepth(5);
+          gun.setOrigin(0.35, 0.5);
+          playerContainer.add(gun);
+          playerContainer.setDepth(3);
+
+          // Create all animations (keeping existing animation code)
+          this.anims.create({
+            key: "radio-anim",
+            frames: this.anims.generateFrameNumbers("radio", {
+              start: 0,
+              end: 1,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "shop-anim",
+            frames: this.anims.generateFrameNumbers("shop", {
+              start: 0,
+              end: 2,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "shop-anim-close",
+            frames: this.anims.generateFrameNumbers("shopclose", {
+              start: 0,
+              end: 8,
+            }),
+            frameRate: 10,
+            repeat: 0,
+          });
+
+          this.anims.create({
+            key: "shop-anim-open",
+            frames: this.anims.generateFrameNumbers("shopclose", {
+              start: 0,
+              end: 8,
+            }),
+            frameRate: 10,
+            repeat: 0,
+            inReverse: true,
+          });
+
+          // Player animations
+          this.anims.create({
+            key: "up",
+            frames: this.anims.generateFrameNumbers("survivor", {
+              start: 0,
+              end: 2,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+          this.anims.create({
+            key: "down",
+            frames: this.anims.generateFrameNumbers("survivor", {
+              start: 3,
+              end: 5,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+          this.anims.create({
+            key: "right",
+            frames: this.anims.generateFrameNumbers("survivor", {
+              start: 6,
+              end: 8,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+          this.anims.create({
+            key: "left",
+            frames: this.anims.generateFrameNumbers("survivor", {
+              start: 9,
+              end: 11,
+            }),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          // Zombie animations for all types
+          ["zombie", "zombiekid", "zombiefemale", "zombiegiant"].forEach(
+            (zombieType) => {
+              this.anims.create({
+                key: `${zombieType}-up`,
+                frames: this.anims.generateFrameNumbers(zombieType, {
+                  start: 0,
+                  end: 2,
+                }),
+                frameRate: 10,
+                repeat: -1,
+              });
+              this.anims.create({
+                key: `${zombieType}-down`,
+                frames: this.anims.generateFrameNumbers(zombieType, {
+                  start: 3,
+                  end: 5,
+                }),
+                frameRate: 10,
+                repeat: -1,
+              });
+              this.anims.create({
+                key: `${zombieType}-left`,
+                frames: this.anims.generateFrameNumbers(zombieType, {
+                  start: 6,
+                  end: 8,
+                }),
+                frameRate: 10,
+                repeat: -1,
+              });
+              this.anims.create({
+                key: `${zombieType}-right`,
+                frames: this.anims.generateFrameNumbers(zombieType, {
+                  start: 9,
+                  end: 11,
+                }),
+                frameRate: 10,
+                repeat: -1,
+              });
+            }
+          );
+
+          this.anims.create({
+            key: "money-fall",
+            frames: this.anims.generateFrameNumbers("money", {
+              start: 0,
+              end: 3,
+            }),
+            frameRate: 10,
+            repeat: 0,
+          });
+
+          // Initialize game objects
+          bullets = this.physics.add.group({
+            classType: Phaser.Physics.Arcade.Image,
+            maxSize: 40,
+            runChildUpdate: true,
+          });
+
+          zombies = this.physics.add.group();
+          moneyGroup = this.physics.add.group();
+
+          // Set up collisions
+          this.physics.add.collider(player, buildingsLayer);
+          this.physics.add.collider(player, fenceLayer);
+          this.physics.add.collider(player, carsLayer);
+          this.physics.add.collider(zombies, buildingsLayer);
+          this.physics.add.collider(zombies, fenceLayer);
+          this.physics.add.collider(zombies, carsLayer);
+          this.physics.add.collider(
+            bullets,
+            buildingsLayer,
+            bulletHitsBuilding,
+            null,
+            this
+          );
+          this.physics.add.collider(
+            bullets,
+            fenceLayer,
+            bulletHitsBuilding,
+            null,
+            this
+          );
+          this.physics.add.collider(
+            bullets,
+            carsLayer,
+            bulletHitsBuilding,
+            null,
+            this
+          );
+
+          // Create shop
+          shop = this.physics.add.sprite(620, 470, "shop").setDepth(2);
+          shop.anims.play("shop-anim");
+          shop.setImmovable(true);
+
+          this.physics.add.overlap(
+            player,
+            shop,
+            () => {
+              if (isDay) {
+                isNearShop = true;
+                const shopkeeperSounds = [
+                  "shopkeeper1",
+                  "shopkeeper2",
+                  "shopkeeper3",
+                ];
+                const randomSound =
+                  shopkeeperSounds[
+                    Math.floor(Math.random() * shopkeeperSounds.length)
+                  ];
+                if (!hasPlayedShopVoice) {
+                  this.sound.play(randomSound, { volume: 0.5 });
+                  hasPlayedShopVoice = true;
+                }
+              }
+            },
+            null,
+            this
+          );
+
+          // Camera setup
+          this.cameras.main.startFollow(player);
+
+          // Controls setup
+          cursors = this.input.keyboard.createCursorKeys();
+          keys = this.input.keyboard.addKeys("W,A,S,D,R");
+          this.input.addPointer(3);
+
+          // MOBILE CONTROLS: Create improved joystick
+          createImprovedJoystick(this);
+
+          // MOBILE CONTROLS: Create mobile UI buttons
+          createMobileUI(this);
+
+          // Create shop menu (keeping existing shop code)
+          shopMenu = this.add.container(0, 0).setScrollFactor(0).setDepth(20);
+
+          const bg = this.add
+            .image(WIDTH / 2, HEIGHT / 2, "shopbg")
+            .setDepth(10)
+            .setDisplaySize(340, 180);
+          const title = this.add
+            .text(WIDTH / 2, HEIGHT / 2 - 50, "Todays Menu", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "16px",
+              fill: "#ffffff",
+            })
+            .setOrigin(0.5);
+
+          stimmyBtn = this.add
+            .image(102, HEIGHT / 2 + 10, "shopstimmy")
+            .setDepth(100)
+            .setDisplaySize(80, 80)
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setInteractive();
+
+          const stimmyCost = this.add
+            .text(90, HEIGHT / 2 - 17, "$50", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "10px",
+              fill: "#00ff00",
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(101);
+
+          const stimmyText = this.add
+            .text(100, HEIGHT / 2 + 60, "+1 HEALTH", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "8px",
+              fill: "#ff0000",
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(101);
+
+          stimmyBtn.on("pointerdown", () => {
+            if (cash >= 50 && health < 5) {
+              cash -= 50;
+              cashText.setText("$" + cash);
+              health++;
+              updateShopBtns();
+              this.sound.play("cashregister", { volume: 0.5 });
+            }
+          });
+
+          shotgunBtn = this.add
+            .image(200, HEIGHT / 2 + 10, "shopshotgun")
+            .setDepth(100)
+            .setDisplaySize(80, 80)
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setInteractive();
+
+          shotgunBtn.on("pointerdown", () => {
+            if (cash >= 200) {
+              cash -= 200;
+              cashText.setText("$" + cash);
+              currentGun = "shotgun";
+              gun.setOrigin(0.2, 0.5);
+              gun.setTexture("shotgun");
+              updateShopBtns();
+              this.sound.play("cashregister", { volume: 0.5 });
+            }
+          });
+
+          const shotgunCost = this.add
+            .text(182, HEIGHT / 2 - 17, "$200", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "10px",
+              fill: "#00ff00",
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(101);
+
+          const shotgunText = this.add
+            .text(202, HEIGHT / 2 + 60, "SHOTGUN", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "8px",
+              fill: "#ff0000",
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(101);
+
+          // Minigun
+          minigunBtn = this.add
+            .image(300, HEIGHT / 2 + 10, "shopminigun")
+            .setDepth(100)
+            .setDisplaySize(80, 80)
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setInteractive();
+
+          minigunBtn.on("pointerdown", () => {
+            if (cash >= 500) {
+              cash -= 500;
+              cashText.setText("$" + cash);
+              currentGun = "minigun";
+              gun.setTexture("minigun");
+              gun.setOrigin(0.2, 0.5);
+              updateShopBtns();
+              this.sound.play("cashregister", { volume: 0.5 });
+            }
+          });
+
+          // ===== Minigun =====
+          const minigunCost = this.add
+            .text(292, HEIGHT / 2 - 17, "$500", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "10px",
+              fill: "#00ff00",
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(101);
+
+          const minigunText = this.add
+            .text(300, HEIGHT / 2 + 60, "MINIGUN", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "8px",
+              fill: "#ff0000",
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(101);
+
+          shopMenu.add([
+            bg,
+            title,
+            stimmyCost,
+            stimmyText,
+            shotgunCost,
+            shotgunText,
+            minigunCost,
+            minigunText,
+          ]);
+
+          // Remove old manual shooting - now handled by auto-shoot or manual button
+          // this.input.on("pointerdown", ...) // REMOVED
+
+          // Game object collisions
+          this.physics.add.overlap(
+            bullets,
+            zombies,
+            bulletHitsZombie,
+            null,
+            this
+          );
+          this.physics.add.overlap(
+            player,
+            zombies,
+            zombieHitsPlayer,
+            null,
+            this
+          );
+          this.physics.add.overlap(
+            player,
+            moneyGroup,
+            collectMoney,
+            null,
+            this
+          );
+
+          // UI Setup
+          navbarBg = this.add
+            .image(WIDTH / 2, 40, "navbarbg")
+            .setScrollFactor(0)
+            .setDepth(10)
+            .setDisplaySize(400, 120);
+
+          heartImage = this.add
+            .image(20, 30, "heart")
+            .setScrollFactor(0)
+            .setDepth(100)
+            .setDisplaySize(20, 15);
+          scoreText = this.add
+            .text(16, 45, "Score:" + score, uiTextStyle)
+            .setScrollFactor(0)
+            .setDepth(10);
+          cashText = this.add
+            .text(16, 65, "$" + cash, uiTextStyle)
+            .setScrollFactor(0)
+            .setDepth(10);
+          healthBar = this.add.graphics();
+          healthBar.setScrollFactor(0);
+          healthBar.setDepth(10);
+
+          dayNightImage = this.add
+            .image(WIDTH - 90, 55, "moon")
+            .setScrollFactor(0)
+            .setDepth(10)
+            .setDisplaySize(20, 20);
+          timerText = this.add
+            .text(WIDTH - 44, 55, "", uiTextStyle)
+            .setScrollFactor(0)
+            .setDepth(10)
+            .setOrigin(0.5);
+          waveText = this.add
+            .text(
+              WIDTH - 55,
+              30,
+              `${isDay ? "Day" : "Wave"}: ${waveNumber}`,
+              uiTextStyle
+            )
+            .setScrollFactor(0)
+            .setDepth(10)
+            .setOrigin(0.5);
+
+          // Fog of war setup
+          rt = this.make.renderTexture({
+            x: 0,
+            y: 0,
+            width: map.widthInPixels,
+            height: map.heightInPixels,
+            add: true,
+          });
+
+          rt.fill(0x000000, 1);
+          rt.draw(groundLayer);
+          rt.setTint(0x0a2948);
+
+          const vision = this.make.image({
+            x: player.x,
+            y: player.y,
+            key: "vision",
+            add: false,
+          });
+
+          this.vision = vision;
+          this.vision.setScale(2).setDepth(5);
+          this.fogMask = new Phaser.Display.Masks.BitmapMask(this, vision);
+          this.fogMask.invertAlpha = true;
+          rt.mask = this.fogMask;
+
+          this.zombieMask = new Phaser.Display.Masks.BitmapMask(this, vision);
+          this.zombieMask.invertAlpha = false;
+          buildingsLayer.mask = this.zombieMask;
+          buildingsAbove.mask = this.zombieMask;
+          shop.mask = this.zombieMask;
+
+          // Radio intro
+          const radio = this.physics.add
+            .sprite(WIDTH - 20, 120, "radio")
+            .setDepth(20)
+            .setScrollFactor(0);
+          radio.anims.play("radio-anim");
+
+          startGameHintText = this.add
+            .text(WIDTH - 10, 110, "", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "11px",
+              fill: "#ffffff",
+              align: "right",
+              lineSpacing: 6,
+            })
+            .setScrollFactor(0)
+            .setDepth(20)
+            .setOrigin(1, 1);
+
+          const hintMessage = "Survive the night!";
+          let index = 0;
+          const typeInterval = this.time.addEvent({
+            delay: 100,
+            callback: () => {
+              if (index < hintMessage.length) {
+                startGameHintText.setText(hintMessage.substring(0, index + 1));
+                index++;
+              } else {
+                typeInterval.destroy();
+                this.tweens.add({
+                  targets: [radio, startGameHintText],
+                  alpha: 0,
+                  duration: 2000,
+                  onComplete: () => {
+                    startGameHintText.destroy();
+                    radio.destroy();
+                  },
+                });
+              }
+            },
+            callbackScope: this,
+            loop: true,
+          });
+
+          this.sound.play("radiostatic", { volume: 0.5 });
+
+          // End game screen setup
+          endbgblack = this.add
+            .rectangle(0, 0, WIDTH, HEIGHT, 0x000000, 0.9)
+            .setOrigin(0)
+            .setScrollFactor(0)
+            .setDepth(4999)
+            .setVisible(false);
+          endbg = this.add
+            .image(WIDTH / 2, HEIGHT / 2, "shopbg")
+            .setOrigin(0.5)
+            .setDepth(5000)
+            .setScrollFactor(0)
+            .setDisplaySize(240, 290)
+            .setVisible(false);
+
+          endStatsHeading = this.add
+            .text(WIDTH / 2, HEIGHT / 2 - 75, "LITTLE UNDEAD\nREPORT", {
+              fontFamily: '"Press Start 2P"',
+              fontSize: "14px",
+              fill: "#ffffff",
+              align: "center",
+              lineSpacing: 6,
+            })
+            .setOrigin(0.5)
+            .setDepth(5001)
+            .setScrollFactor(0)
+            .setVisible(false);
+
+          endStatsText = this.add
+            .text(
+              WIDTH / 2 - 5,
+              HEIGHT / 2 + 10,
+              `Score: ${score}\nSurvived:${waveNumber} days\nKills:${kills}\nCash: ${cash}\nWeapon: ${currentGun}`,
+              {
+                fontFamily: '"Press Start 2P"',
+                fontSize: "10px",
+                fill: "#ffffff",
+                align: "left",
+                lineSpacing: 9,
+              }
+            )
+            .setOrigin(0.5)
+            .setDepth(5002)
+            .setScrollFactor(0)
+            .setVisible(false);
+
+          endContinueBtn = this.add
+            .image(WIDTH / 2, HEIGHT / 2 + 90, "exitbutton")
+            .setOrigin(0.5)
+            .setInteractive()
+            .setScale(1.2)
+            .setDepth(5001)
+            .setScrollFactor(0)
+            .setVisible(false);
+
+          endContinueBtn.on("pointerdown", () => {
+            endStatsText.setVisible(false);
+            endStatsHeading.setVisible(false);
+            endContinueBtn.setVisible(false);
+            endbgblack.setVisible(false);
+            endbg.setVisible(false);
+            finishGame(this);
+          });
+
+          this.tweens.add({
+            targets: endContinueBtn,
+            y: endContinueBtn.y + 3,
+            duration: 1000,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+          });
+
+          // Farcade event listeners
+          window.FarcadeSDK.on("play_again", () => {
+            restart(this);
+            updateShopBtns();
+          });
+          window.FarcadeSDK.on("toggle_mute", (data) => {
+            this.sound.mute = data.isMuted;
+          });
+
+          updateShopBtns();
+        }
+
+        update(time, delta) {
+          if (gameOver) {
+            if (keys.R.isDown) restart(this);
+            return;
+          }
+
+          // MOBILE: Update auto-shooting system
+          updateAutoShoot(this, time);
+
+          // Time management
+          let hours = Math.floor(gameTimeMinutes / 60);
+          let minutes = Math.floor(gameTimeMinutes % 60);
+          isDay = hours >= 9 && hours < 15;
+
+          let realSecondsPerGameMinute;
+          if (isDay) {
+            realSecondsPerGameMinute = 15 / (6 * 60);
+          } else {
+            realSecondsPerGameMinute = 45 / (18 * 60);
+          }
+
+          let minutesToAdd = delta / 1000 / realSecondsPerGameMinute;
+          gameTimeMinutes = (gameTimeMinutes + minutesToAdd) % 1440;
+
+          // Day/night transitions
+          if (isDay !== lastIsDay) {
+            lastIsDay = isDay;
+            this.tweens.add({
+              targets: this.vision,
+              scaleX: isDay ? 2 : 1,
+              scaleY: isDay ? 2 : 1,
+              duration: 2000,
+              ease: "Linear",
+            });
+
+            if (isDay) {
+              zombies.children.iterate((zombie) => {
+                if (zombie && zombie.active) {
+                  const p = this.add.particles("blood");
+                  const emitter = p.createEmitter({
+                    x: zombie.x,
+                    y: zombie.y,
+                    speed: { min: 80, max: 200 },
+                    angle: { min: 0, max: 360 },
+                    gravityY: 0,
+                    lifespan: 400,
+                    quantity: 12,
+                    scale: { start: 0.9, end: 0 },
+                    on: false,
+                  });
+                  emitter.explode(12, zombie.x, zombie.y);
+                }
+              });
+
+              waveNumber++;
+              waveText.setText(`${isDay ? "Day" : "Wave"}: ${waveNumber}`);
+
+              shop.setVisible(true);
+              this.tweens.add({
+                targets: shop,
+                x: shop.x + 100,
+                duration: 400,
+                ease: "Power2",
+                onComplete: () => {
+                  shop.anims.play("shop-anim-open");
+                },
+              });
+
+              this.time.delayedCall(2000, () => {
+                shop.anims.play("shop-anim");
+              });
+
+              shopMenu.setVisible(true);
+              stimmyBtn.setVisible(true);
+              shotgunBtn.setVisible(true);
+              minigunBtn.setVisible(true);
+
+              zombies.clear(true, true);
+            } else {
+              shop.anims.play("shop-anim-close");
+              this.time.delayedCall(2000, () => {
+                this.tweens.add({
+                  targets: shop,
+                  x: shop.x - 100,
+                  duration: 400,
+                  ease: "Power2",
+                  onComplete: () => {
+                    shop.setVisible(false);
+                  },
+                });
+              });
+              // Seed an initial horde
+              let hordeSize = 10 + waveNumber * 5; // 7, 9, 11 …
+              for (let i = 0; i < hordeSize; i++) {
+                // slight stagger so they don’t all pop on the same frame
+                this.time.delayedCall(i * 150, () => spawnZombie(this));
+              }
+              shopMenu.setVisible(false);
+              stimmyBtn.setVisible(false);
+              shotgunBtn.setVisible(false);
+              minigunBtn.setVisible(false);
+
+              waveText.setText(`${isDay ? "Day" : "Wave"}: ${waveNumber}`);
+              this.sound.play("music", { volume: 0.4 });
+            }
+          }
+
+          waveActive = !isDay;
+          dayNightImage.setTexture(isDay ? "sun" : "moon");
+          let clockText =
+            hours.toString().padStart(2, "0") +
+            ":" +
+            minutes.toString().padStart(2, "0");
+          timerText.setText(clockText);
+          rt.visible = true;
+
+          // Movement - only use keyboard if joystick is not active
+          if (!joystickActive) {
+            let vx = 0,
+              vy = 0;
+            if (cursors.left.isDown || keys.A.isDown) vx -= player.speed;
+            else if (cursors.right.isDown || keys.D.isDown) vx += player.speed;
+            else if (cursors.up.isDown || keys.W.isDown) vy -= player.speed;
+            else if (cursors.down.isDown || keys.S.isDown) vy += player.speed;
+
+            if (vx !== 0 || vy !== 0) {
+              footstepsTimer += delta;
+              if (footstepsTimer >= 100) {
+                this.sound.play("running", { volume: 0.05 });
+                footstepsTimer = 0;
+              }
+            }
+
+            player.setVelocity(vx, vy);
+          }
+
+          // Update player container
+          if (playerContainer) {
+            playerContainer.setPosition(player.x, player.y);
+            let target = findNearestZombie(); // reuse your existing helper
+            let aimAngle = target
+              ? Phaser.Math.Angle.Between(
+                  player.x,
+                  player.y,
+                  target.x,
+                  target.y
+                )
+              : player.anims.currentAnim &&
+                player.anims.currentAnim.key.includes("left")
+              ? Math.PI // face left if idle & last moved left
+              : 0; // else face right
+
+            gun.setRotation(aimAngle);
+            gun.setFlipY(aimAngle > Math.PI / 2 || aimAngle < -Math.PI / 2);
+          }
+
+          // Player animations
+          const velocity = player.body.velocity;
+          if (velocity.x > 0) {
+            player.anims.play("right", true);
+            playerContainer.setDepth(3);
+          } else if (velocity.x < 0) {
+            player.anims.play("left", true);
+            playerContainer.setDepth(3);
+          } else if (velocity.y < 0) {
+            player.anims.play("up", true);
+            playerContainer.setDepth(1);
+          } else if (velocity.y > 0) {
+            player.anims.play("down", true);
+            playerContainer.setDepth(3);
+          } else {
+            player.anims.stop();
+          }
+
+          playerContainer.x = player.body.x;
+          playerContainer.y = player.body.y;
+
+          // Zombie spawning
+          const currentDelay = Math.max(1500, 3000 - (waveNumber - 1) * 500);
+          if (waveActive) {
+            spawnTimer += delta;
+            if (spawnTimer > currentDelay) {
+              spawnTimer = 0;
+              spawnZombie(this);
+            }
+          }
+
+          // Zombies AI: move to player and handle animations
+          zombies.getChildren().forEach((z) => {
+            if (!z.active) return;
+            const speed = z.baseSpeed;
+            this.physics.moveToObject(z, player, speed);
+            const angleToPlayer = Phaser.Math.Angle.Between(
+              z.x,
+              z.y,
+              player.x,
+              player.y
+            );
+            const direction = Phaser.Math.RadToDeg(angleToPlayer);
+            if (z.zombieTypeSpawned === "kid") {
+              if (direction > -45 && direction <= 45)
+                z.anims.play("zombiekid-right", true);
+              else if (direction > 45 && direction <= 135)
+                z.anims.play("zombiekid-down", true);
+              else if (direction > 135 || direction <= -135)
+                z.anims.play("zombiekid-left", true);
+              else z.anims.play("zombiekid-up", true);
+            } else if (z.zombieTypeSpawned === "female") {
+              if (direction > -45 && direction <= 45)
+                z.anims.play("zombiefemale-right", true);
+              else if (direction > 45 && direction <= 135)
+                z.anims.play("zombiefemale-down", true);
+              else if (direction > 135 || direction <= -135)
+                z.anims.play("zombiefemale-left", true);
+              else z.anims.play("zombiefemale-up", true);
+            } else if (z.zombieTypeSpawned === "giant") {
+              if (direction > -45 && direction <= 45)
+                z.anims.play("zombiegiant-right", true);
+              else if (direction > 45 && direction <= 135)
+                z.anims.play("zombiegiant-down", true);
+              else if (direction > 135 || direction <= -135)
+                z.anims.play("zombiegiant-left", true);
+              else z.anims.play("zombiegiant-up", true);
+            } else {
+              if (direction > -45 && direction <= 45)
+                z.anims.play("zombie-right", true);
+              else if (direction > 45 && direction <= 135)
+                z.anims.play("zombie-down", true);
+              else if (direction > 135 || direction <= -135)
+                z.anims.play("zombie-left", true);
+              else z.anims.play("zombie-up", true);
+            }
+          });
+
+          // Invulnerability timer
+          if (!canBeHit) {
+            if (player._invulnTimer === undefined) player._invulnTimer = 0;
+            player._invulnTimer -= delta;
+            if (player._invulnTimer <= 0) {
+              canBeHit = true;
+              player.clearTint();
+            }
+          }
+
+          // Shop overlap check
+          if (!this.physics.overlap(player, shop)) {
+            isNearShop = false;
+            hasPlayedShopVoice = false;
+          }
+
+          // Show/hide shop menu
+          if (isDay) {
+            shopMenu.setVisible(isNearShop);
+            stimmyBtn.setVisible(isNearShop);
+            shotgunBtn.setVisible(isNearShop);
+            minigunBtn.setVisible(isNearShop);
+          }
+
+          // Update UI
+          scoreText.setText("Score:" + score);
+          cashText.setText("$ " + cash);
+          healthBar.clear();
+          healthBar.fillStyle(0xff0000, 1);
+          healthBar.fillRect(20, 26, (health / 5) * 100, 10);
+
+          // Game over check
+          if (health <= 0 && !gameOver) {
+            zombies.clear(true, true);
+            canBeHit = false;
+            endStatsHeading.setVisible(true);
+            endStatsText.setText(
+              `Score: ${score}\nSurvived:${
+                waveNumber - 1
+              } days\nKills:${kills}\nCash: ${cash}\nWeapon: ${currentGun}`
+            );
+            endStatsText.setVisible(true);
+            endContinueBtn.setVisible(true);
+            endbgblack.setVisible(true);
+            endbg.setVisible(true);
+            window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            if (!hasPlayedDeathscream) {
+              this.sound.play("playerdeath", { volume: 0.2 });
+              hasPlayedDeathscream = true;
+            }
+          }
+
+          // Update vision position
+          if (this.vision) {
+            this.vision.x = player.x;
+            this.vision.y = player.y;
+          }
+        }
+      }
+
+      const config = {
+        type: Phaser.AUTO,
+        parent: "game-container",
+        width: WIDTH,
+        height: HEIGHT,
+        backgroundColor: "#2b2b2b",
+        physics: {
+          default: "arcade",
+          arcade: {
+            debug: false,
+            gravity: { y: 0 },
+          },
+        },
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH,
+        },
+        pixelArt: true,
+        scene: [BootScene, LoadingScene, GameScene],
+      };
+
+      new Phaser.Game(config);
+    </script>
+  </body>
+</html>

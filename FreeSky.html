@@ -1,0 +1,1091 @@
+<![DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Phaser Ski Game - Remix Ready</title>
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, user-scalable=no"
+    />
+    <style>
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: #e8f3ff;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        touch-action: manipulation;
+        overflow: hidden;
+      }
+      canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@0.2.1/dist/index.min.js"></script>
+  </head>
+  <body>
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.70.0/dist/phaser.min.js"></script>
+    <script>
+      (() => {
+        // Configurable
+        const SAFE_MARGIN = 24;
+
+        // Globals
+        let game;
+        let W = window.innerWidth;
+        let H = window.innerHeight;
+
+        // Farcade state
+        let farcadeListenersAdded = false;
+        let farcadeReadyCalled = false;
+        let sceneReadyForFarcade = false;
+
+        // helper to attach Farcade as soon as it's available
+        function tryAttachFarcade() {
+          try {
+            if (!window.FarcadeSDK) return;
+            // attach listeners once
+            if (!farcadeListenersAdded && window.FarcadeSDK.on) {
+              farcadeListenersAdded = true;
+              window.FarcadeSDK.on("play_again", () => {
+                try {
+                  restartGame();
+                } catch (e) {}
+              });
+              window.FarcadeSDK.on("toggle_mute", ({ isMuted: m }) => {
+                try {
+                  isMuted = !!m;
+                  if (game && game.sound) game.sound.mute = isMuted;
+                } catch (e) {}
+              });
+            }
+            // notify ready once scene is ready
+            if (sceneReadyForFarcade && !farcadeReadyCalled) {
+              if (
+                window.FarcadeSDK.singlePlayer &&
+                window.FarcadeSDK.singlePlayer.actions &&
+                window.FarcadeSDK.singlePlayer.actions.ready
+              ) {
+                try {
+                  window.FarcadeSDK.singlePlayer.actions.ready();
+                } catch (e) {}
+                farcadeReadyCalled = true;
+              }
+            }
+          } catch (e) {}
+        }
+
+        // Robust restart routine invoked by Farcade "play_again"
+        function restartGame() {
+          try {
+            pointerActive = false;
+            // clear and destroy groups and visuals to avoid lingering objects
+            try {
+              if (trailGroup) {
+                try {
+                  const children = trailGroup.getChildren
+                    ? trailGroup.getChildren()
+                    : [];
+                  for (let i = children.length - 1; i >= 0; i--) {
+                    try {
+                      children[i].destroy();
+                    } catch (e) {}
+                  }
+                  trailGroup.clear(true);
+                } catch (e) {}
+              }
+              if (obstacles && obstacles.clear) {
+                obstacles.clear(true);
+              }
+              if (gates && gates.clear) {
+                gates.clear(true);
+              }
+              if (trailTex && trailTex.clear) trailTex.clear();
+              if (blackTrailTex && blackTrailTex.clear) blackTrailTex.clear();
+              if (trailGraphics && trailGraphics.clear) trailGraphics.clear();
+            } catch (e) {}
+
+            // Reset some globals so create() sets them fresh
+            try {
+              steer = 0;
+              facing = 0;
+              targetFacing = 0;
+              baseSpeed = 160;
+              speed = baseSpeed;
+              alive = true;
+              score = 0;
+              gameOverCalled = false;
+              scoreMultiplier = 1;
+              isJumping = false;
+              nextSpeedIncreaseScore = 1000;
+              lastTrailX = W / 2;
+              lastTrailY = H / 2;
+            } catch (e) {}
+
+            // If there's an active scene, restart it. If not, recreate the game.
+            if (
+              game &&
+              game.scene &&
+              game.scene.scenes &&
+              game.scene.scenes.length > 0
+            ) {
+              try {
+                const mainScene = game.scene.scenes[0];
+                if (mainScene && mainScene.scene && mainScene.scene.restart) {
+                  mainScene.scene.restart();
+                  return;
+                }
+              } catch (e) {}
+            }
+
+            // fallback: destroy and create a fresh game instance
+            try {
+              if (game && game.destroy) game.destroy(true);
+            } catch (e) {}
+            game = new Phaser.Game(config);
+          } catch (e) {}
+        }
+
+        const config = {
+          type: Phaser.AUTO,
+          width: W,
+          height: H,
+          pixelArt: true,
+          backgroundColor: "#e8f3ff",
+          physics: { default: "arcade", arcade: { debug: false } },
+          input: { activePointers: 2 },
+          scene: { preload, create, update },
+        };
+
+        let skier,
+          cursors,
+          keys,
+          obstacles,
+          gates,
+          trailGroup,
+          baseSpeed = 160,
+          speed = 160,
+          steer = 0,
+          facing = 0,
+          targetFacing = 0,
+          alive = true,
+          score = 0,
+          scoreText,
+          pointerActive = false,
+          pointerX = 0,
+          isMuted = false,
+          gameOverCalled = false,
+          scoreMultiplier = 1,
+          tutorialText = null;
+
+        let nextSpeedIncreaseScore = 1000;
+
+        // Jump state
+        let isJumping = false;
+        let originalY = null;
+        let jumpTween = null;
+
+        // Simple persistent trail using sprites (so they move with the world)
+        let lastTrailX = 0;
+        let lastTrailY = 0;
+
+        // RenderTexture and helper Graphics (fix for lineBetween error)
+        let trailTex = null;
+        let blackTrailTex = null;
+        let trailGraphics = null;
+
+        // Simple WebAudio beep for collisions (no external assets)
+        const AudioDriver = (() => {
+          let ctx;
+          function ensure() {
+            if (!ctx) {
+              ctx = new (window.AudioContext || window.webkitAudioContext)();
+            }
+            return ctx;
+          }
+          function beep(freq = 240, time = 0.12) {
+            if (isMuted) return;
+            const c = ensure();
+            const o = c.createOscillator();
+            const g = c.createGain();
+            o.type = "sine";
+            o.frequency.value = freq;
+            g.gain.value = 0.0001;
+            o.connect(g);
+            g.connect(c.destination);
+            const now = c.currentTime;
+            g.gain.linearRampToValueAtTime(0.12, now + 0.01);
+            o.start(now);
+            g.gain.exponentialRampToValueAtTime(0.0001, now + time);
+            o.stop(now + time + 0.02);
+          }
+          return { beep };
+        })();
+
+        function preload() {
+          // Load provided ski PNG to use as player sprite and hit feedback
+          const skiURL =
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/ski-uMI9KlEhwyAB3Yk69VFFaII4Fa580y.png?ADpx";
+          this.load.image("skierImg", skiURL);
+
+          const skiURLJump =
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/skijump-F0Ojy2ys9XiZCRbGy4kgPnTFsejSjo.png?zWCY";
+          this.load.image("skierJump", skiURLJump);
+
+          // Snow trail sprite (2-frame, 16x16)
+          const trailURL =
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/snowtrailsprite-PZOmtDyIEAHNtZD6ZXOHs6dcf7SWJb.png?VsVw";
+          this.load.spritesheet("snowtrails", trailURL, {
+            frameWidth: 16,
+            frameHeight: 16,
+          });
+
+          // Load four tree image variations provided by user
+          this.load.image(
+            "tree1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/tree1-0jzypoBZMQV8F4o9G0pv9PvWGRrJfp.png?5JEz"
+          );
+          this.load.image(
+            "tree2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/tree2-fzFXSCrQyPuWtgRkmmXKE7Zj4oW82b.png?JNWV"
+          );
+          this.load.image(
+            "tree3",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/tree3-yV5d1wLThSLqpSvlAGiQcoj6DKrITx.png?h0C9"
+          );
+          this.load.image(
+            "tree4",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/tree4-pKpnzxMnKA8UdjTVbIXIiKL3k8rLSa.png?9oPG"
+          );
+
+          // Load ramp image to replace red line gate
+          this.load.image(
+            "gate",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/ramp-hM4fVzhAQ4s9W6pjJCPLBKF856Usmw.png?XVRU"
+          );
+
+          // New obstacles requested by user
+          this.load.image(
+            "rock",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/rock-CW9lkutRVjj6pRmcHVoAiQuk6FE1S1.png?IZTa"
+          );
+          this.load.image(
+            "snowman",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/snowman-rGZLOm8OQHz1GRKO5VN4cb13mNI9Kt.png?67tx"
+          );
+          this.load.image(
+            "stump",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/stump-vPmyHZAqPq8vV1vwgar26xMozIG0Lq.png?UMFv"
+          );
+
+          // Yeti sprite (16x16, 3 frames running)
+          this.load.spritesheet(
+            "yeti",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/59adfa86-d36c-4d92-9a43-43678fed9812/yeti-Bds9v4tnXvneAC3e7M2VlXnZGwIeBB.png?weB0",
+            { frameWidth: 16, frameHeight: 16 }
+          );
+
+          const g = this.add.graphics();
+
+          // Small white dot used for line segments (ensures a continuous-looking line using sprites)
+          g.clear();
+          g.fillStyle(0xffffff, 1);
+          g.fillCircle(3, 3, 3);
+          g.generateTexture("lineDot", 6, 6);
+
+          // Snow particle textures for realistic trail (two sizes)
+          g.clear();
+          g.fillStyle(0xffffff, 1);
+          g.fillCircle(3, 3, 3);
+          g.generateTexture("snowDot", 6, 6);
+          g.clear();
+          g.fillStyle(0xffffff, 1);
+          g.fillCircle(6, 6, 4);
+          g.fillStyle(0xffffff, 0.85);
+          g.fillCircle(3, 4, 2);
+          g.fillCircle(9, 4, 2);
+          g.generateTexture("snowFlake", 12, 12);
+
+          g.destroy();
+        }
+
+        function create() {
+          const scene = this;
+
+          // Reset state (also used on restarts)
+          W = window.innerWidth;
+          H = window.innerHeight;
+          steer = 0;
+          facing = 0;
+          targetFacing = 0;
+          baseSpeed = 160;
+          speed = baseSpeed;
+          alive = true;
+          score = 0;
+          gameOverCalled = false;
+          scoreMultiplier = 1;
+          isJumping = false;
+          jumpTween = null;
+
+          cursors = scene.input.keyboard.createCursorKeys();
+          keys = scene.input.keyboard.addKeys("W,A,S,D");
+          obstacles = scene.physics.add.group();
+          gates = scene.physics.add.group();
+
+          // Create persistent trail group (these will scroll up with obstacles)
+          if (trailGroup) {
+            try {
+              trailGroup.clear(true);
+            } catch (e) {}
+          }
+          trailGroup = scene.add.group();
+
+          // Skier (use loaded PNG)
+          const startX = Phaser.Math.Clamp(W / 2, SAFE_MARGIN, W - SAFE_MARGIN);
+          const startY = Math.min(H * 0.35, H - SAFE_MARGIN * 4);
+          skier = scene.physics.add.image(startX, startY, "skierImg");
+          originalY = startY;
+          // Set visible size similar to previous triangle (approx 24x24)
+          skier.setDisplaySize(24, 24);
+          skier.setImmovable(true);
+          skier.setCollideWorldBounds(true);
+          skier.setScale(2);
+          skier.setDepth(2);
+
+          trailTex = this.add.renderTexture(0, 0, W, H).setDepth(0);
+          trailTex.setTint(0xffffff).setAlpha(0.2);
+          // Black trail (ski tracks) - separate render texture so they remain dark and visible
+          blackTrailTex = this.add.renderTexture(0, 0, W, H).setDepth(0.5);
+          lastTrailX = skier.x;
+          lastTrailY = skier.y;
+
+          // Create a Graphics instance to draw lines into the RenderTexture (fixes lineBetween error)
+          trailGraphics = this.add.graphics();
+          trailGraphics.setDepth(0);
+
+          // Score text (top-left) - increased size
+          scoreText = scene.add.text(12, 12, "Score: 0", {
+            font: "32px Arial",
+            fill: "#053b63",
+            stroke: "#e8f3ff",
+            strokeThickness: 6,
+          });
+          scoreText.setOrigin(0, 0);
+          scoreText.setDepth(10000);
+
+          // Tutorial text shown at beginning and fades out
+          try {
+            const tutorialString =
+              "Swipe to move\nHit ramps for bonus points\nAvoid obstacles";
+            tutorialText = scene.add.text(W / 2, H * 0.22, tutorialString, {
+              font: "22px Arial",
+              fill: "#053b63",
+              align: "center",
+              stroke: "#e8f3ff",
+              strokeThickness: 6,
+              lineSpacing: 6,
+            });
+            tutorialText.setOrigin(0.5, 0.5);
+            tutorialText.setDepth(9999);
+            tutorialText.setAlpha(1);
+            // Slight appear scale then fade out
+            tutorialText.setScale(0.98);
+            scene.tweens.add({
+              targets: tutorialText,
+              scale: 1.02,
+              duration: 700,
+              yoyo: true,
+              onComplete: () => {
+                scene.tweens.add({
+                  targets: tutorialText,
+                  alpha: 0,
+                  delay: 1000,
+                  duration: 900,
+                  onComplete: () => {
+                    try {
+                      tutorialText.destroy();
+                    } catch (e) {}
+                    tutorialText = null;
+                  },
+                });
+              },
+            });
+          } catch (e) {}
+
+          // Create yeti run animation
+          try {
+            scene.anims.create({
+              key: "yeti_run",
+              frames: scene.anims.generateFrameNumbers("yeti", {
+                start: 0,
+                end: 2,
+              }),
+              frameRate: 10,
+              repeat: -1,
+            });
+          } catch (e) {}
+
+          // helper: start jump (lift skier and change texture)
+          function startJump() {
+            if (isJumping) return;
+            isJumping = true;
+            score += 500;
+            skier.setTexture("skierJump");
+            try {
+              skier.setDepth(1000);
+            } catch (e) {}
+            if (jumpTween) {
+              try {
+                jumpTween.stop();
+              } catch (e) {}
+              jumpTween = null;
+            }
+            jumpTween = scene.tweens.add({
+              targets: skier,
+              y: originalY - 44,
+              duration: 220,
+              ease: "Cubic.easeOut",
+            });
+          }
+
+          // helper: end jump (bring skier down and restore texture)
+          function endJump() {
+            if (!isJumping) return;
+            if (jumpTween) {
+              try {
+                jumpTween.stop();
+              } catch (e) {}
+              jumpTween = null;
+            }
+            scene.tweens.add({
+              targets: skier,
+              y: originalY,
+              duration: 220,
+              ease: "Cubic.easeIn",
+              onComplete: () => {
+                isJumping = false;
+                try {
+                  skier.setTexture("skierImg");
+                  skier.setDepth(2);
+                } catch (e) {}
+              },
+            });
+          }
+
+          // Spawn a chasing yeti every 6s
+          scene.time.addEvent({
+            delay: 30000,
+            loop: true,
+            callback: () => {
+              if (!alive) return;
+              const spawnX = Phaser.Math.Between(SAFE_MARGIN, W - SAFE_MARGIN);
+              const y = scene.physics.add.sprite(spawnX, H + 80, "yeti", 0);
+              y.setScale(4);
+
+              y.setDepth(1.1);
+              y.setImmovable(true);
+
+              // mark as yeti so update logic treats it differently
+              y._isYeti = true;
+              obstacles.add(y);
+              try {
+                y.play("yeti_run");
+              } catch (e) {}
+            },
+          });
+
+          // --- Persistent Snow trail stamping (small sprites) ---
+          scene.time.addEvent({
+            delay: 100,
+            loop: true,
+            callback: () => {
+              if (!alive) return;
+              const jumping = isJumping;
+              const moving =
+                Math.abs(steer) > 0.02 ||
+                pointerActive ||
+                (cursors && (cursors.left.isDown || cursors.right.isDown)) ||
+                (keys &&
+                  ((keys.A && keys.A.isDown) || (keys.D && keys.D.isDown)));
+              // prevent emitting particles while in the air
+              if (!moving || jumping) return;
+
+              // include facing to intensify trail when carving
+              const intensity = Phaser.Math.Clamp(
+                Math.abs(steer) +
+                  Math.abs(facing) * 0.6 +
+                  (pointerActive ? 0.5 : 0),
+                0,
+                1
+              );
+              const minMarks = jumping ? 1 : 2;
+              const maxMarks = jumping ? 3 : 6;
+              const count = Phaser.Math.Between(
+                minMarks,
+                Math.floor(
+                  Phaser.Math.Linear(minMarks, maxMarks, intensity) || minMarks
+                )
+              );
+
+              for (let i = 0; i < count; i++) {
+                const baseX = Phaser.Math.Clamp(
+                  skier.x + Phaser.Math.Between(-8, 8),
+                  SAFE_MARGIN,
+                  W - SAFE_MARGIN
+                );
+                const baseY = Phaser.Math.Clamp(
+                  skier.y + 8 + Phaser.Math.Between(-6, 8),
+                  SAFE_MARGIN,
+                  H - SAFE_MARGIN
+                );
+
+                const tex = Math.random() < 0.6 ? "snowDot" : "snowFlake";
+                const mark = scene.add.image(baseX, baseY, tex);
+                try {
+                  mark.setDepth(1.2);
+                } catch (e) {}
+                const size = Phaser.Math.Between(
+                  tex === "snowDot" ? 6 : 8,
+                  tex === "snowDot" ? 12 : 18
+                );
+                mark.setDisplaySize(size, size);
+                mark.setAlpha(Phaser.Math.FloatBetween(0.55, 0.95));
+                const angle =
+                  Phaser.Math.Between(-45, 45) + -steer * 20 + facing * 12;
+                mark.setRotation(Phaser.Math.DegToRad(angle));
+                mark.vx =
+                  Phaser.Math.FloatBetween(-12, 12) +
+                  -steer * Phaser.Math.Between(0, 24) +
+                  facing * Phaser.Math.Between(-6, 6);
+                mark._createdAt = scene.time.now;
+                trailGroup.add(mark);
+              }
+
+              const MAX_MARKS = 1000;
+              const children = trailGroup.getChildren();
+              if (children.length > MAX_MARKS) {
+                const toRemove = Math.ceil(children.length - MAX_MARKS);
+                for (let r = 0; r < toRemove; r++) {
+                  const c = children[r];
+                  try {
+                    c.destroy();
+                  } catch (e) {}
+                }
+              }
+            },
+          });
+
+          // Collision handler with trees (and yetis since they are in obstacles)
+          scene.physics.add.overlap(skier, obstacles, () => {
+            if (!alive) return;
+            if (isJumping) return;
+            alive = false;
+            try {
+              if (
+                window.FarcadeSDK &&
+                window.FarcadeSDK.singlePlayer &&
+                window.FarcadeSDK.singlePlayer.actions
+              ) {
+                window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+              }
+            } catch (e) {}
+            AudioDriver.beep(120, 0.2);
+          });
+
+          // Collision handler with gates - only trigger when on the ground
+          scene.physics.add.overlap(skier, gates, (s, g) => {
+            if (!alive) return;
+            if (!g || !g.active) return;
+            // only allow hitting ramp when skier is on ground (not mid-jump)
+            if (isJumping) return;
+            if (Math.abs(skier.y - originalY) > 8) return;
+
+            const speedBump = 80;
+            const maxSpeed = 480;
+            const addedMultiplier = 1;
+            speed = Math.min(speed + speedBump, maxSpeed);
+            scoreMultiplier = Math.min(scoreMultiplier + addedMultiplier, 4);
+
+            startJump();
+
+            try {
+              if (
+                window.FarcadeSDK &&
+                window.FarcadeSDK.singlePlayer &&
+                window.FarcadeSDK.singlePlayer.actions
+              ) {
+                window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+              }
+            } catch (e) {}
+            AudioDriver.beep(560, 0.12);
+
+            scene.time.addEvent({
+              delay: 3000,
+              callback: () => {
+                scoreMultiplier = Math.max(
+                  1,
+                  scoreMultiplier - addedMultiplier
+                );
+                speed = Math.max(baseSpeed, speed - speedBump);
+                if (scoreMultiplier <= 1) {
+                  endJump();
+                }
+              },
+            });
+          });
+
+          scene.time.addEvent({
+            delay: 300,
+            loop: true,
+            callback: () => {
+              const x = Phaser.Math.Between(
+                Math.floor(W * 0.0001),
+                Math.floor(W * 1)
+              );
+              // Weighted obstacle list (more trees, fewer snowmen)
+              const obsKeys = [
+                "tree1",
+                "tree2",
+                "tree3",
+                "tree4", // trees (high frequency)
+                "tree1",
+                "tree2",
+                "tree3",
+                "tree4", // repeat to boost chance
+                "tree1",
+                "tree2", // even more tree weight
+                "rock",
+                "rock", // medium frequency
+                "stump",
+                "stump", // medium-low frequency
+                "snowman", // rare
+              ];
+              const key = Phaser.Utils.Array.GetRandom(obsKeys);
+
+              const t = obstacles.create(x, H + 50, key);
+              t.setImmovable(true);
+
+              // Define base sizes for each sprite (used for consistent display scaling)
+              let baseW = 32;
+              let baseH = 48;
+
+              switch (key) {
+                case "rock":
+                  baseW = 28;
+                  baseH = 20;
+                  break;
+                case "stump":
+                  baseW = 26;
+                  baseH = 18;
+                  break;
+                case "snowman":
+                  baseW = 36;
+                  baseH = 48;
+                  break;
+              }
+
+              // Random scale variation
+              const scale = Phaser.Math.FloatBetween(1.1, 1.75);
+
+              // Apply display size scaling
+              const dispW = baseW * scale;
+              const dispH = baseH * scale;
+              t.setDisplaySize(dispW, dispH);
+              t.setDepth(1); // make sure it appears above background/particles
+
+              // Set body size to bottom portion (e.g., trunk or base only)
+              const bodyW = dispW * 0.15; // slightly narrower than full width for fairness
+              const bodyH = dispH * 0.15; // bottom 40% only
+
+              const offsetX = (dispW - bodyW) / 2;
+              const offsetY = dispH - bodyH;
+
+              if (t.body?.setSize && t.body?.setOffset) {
+                t.body.setSize(bodyW, bodyH);
+              }
+            },
+          });
+
+          // Spawn gates every 2500ms
+          scene.time.addEvent({
+            delay: 2500,
+            loop: true,
+            callback: () => {
+              const gateTex = scene.textures.get("gate");
+              const gw = gateTex ? gateTex.getSourceImage().width : 84;
+              const minX = SAFE_MARGIN + gw / 2;
+              const maxX = Math.max(
+                SAFE_MARGIN + gw / 2,
+                W - SAFE_MARGIN - gw / 2
+              );
+              const x = Phaser.Math.Between(minX, maxX);
+              const g = gates.create(x, H + 50, "gate");
+              g.setImmovable(true);
+              try {
+                g.setDepth(1);
+                // Make physics body cover only bottom half of the gate image
+                if (g.body && g.body.setSize) {
+                  const bodyW = g.displayWidth;
+                  const bodyH = g.displayHeight * 0.5;
+                  try {
+                    g.body.setSize(bodyW, bodyH);
+                    if (g.body.setOffset)
+                      g.body.setOffset(0, g.displayHeight * 0.5);
+                  } catch (e) {}
+                }
+              } catch (e) {}
+            },
+          });
+
+          // Pointer (touch) handling
+          scene.input.on("pointerdown", (p) => {
+            pointerActive = true;
+            pointerX = p.x;
+          });
+          scene.input.on("pointerup", () => {
+            pointerActive = false;
+          });
+          scene.input.on("pointermove", (p) => {
+            if (p.isDown) {
+              pointerActive = true;
+              pointerX = p.x;
+            }
+          });
+
+          // Resize handling
+          window.addEventListener("resize", () => {
+            const newW = window.innerWidth;
+            const newH = window.innerHeight;
+            W = newW;
+            H = newH;
+            scene.scale.resize(W, H);
+            skier.x = Phaser.Math.Clamp(skier.x, SAFE_MARGIN, W - SAFE_MARGIN);
+            skier.y = Phaser.Math.Clamp(skier.y, SAFE_MARGIN, H - SAFE_MARGIN);
+            originalY = Phaser.Math.Clamp(
+              originalY,
+              SAFE_MARGIN,
+              H - SAFE_MARGIN
+            );
+
+            // reset last trail positions to avoid a giant connecting line after resize
+            lastTrailX = skier.x;
+            lastTrailY = skier.y;
+
+            // Resize render textures to match new dimensions
+            try {
+              if (trailTex) {
+                trailTex.setSize(W, H);
+              }
+              if (blackTrailTex) {
+                blackTrailTex.setSize(W, H);
+              }
+            } catch (e) {}
+            // reposition tutorial if still present
+            try {
+              if (tutorialText) {
+                tutorialText.x = W / 2;
+                tutorialText.y = H * 0.22;
+              }
+            } catch (e) {}
+          });
+
+          // mark scene ready and attempt to attach/announce to Farcade
+          sceneReadyForFarcade = true;
+          tryAttachFarcade();
+          // poll for Farcade presence in case SDK loads after the page
+          const farcadePoll = setInterval(() => {
+            tryAttachFarcade();
+            if (farcadeListenersAdded && farcadeReadyCalled) {
+              clearInterval(farcadePoll);
+            }
+          }, 500);
+          // safety stop after 15s
+          setTimeout(() => clearInterval(farcadePoll), 15000);
+        }
+
+        function update(_, delta) {
+          const dt = delta / 1000;
+          const scene = game.scene.scenes[0];
+
+          if (!alive) {
+            if (!gameOverCalled) {
+              gameOverCalled = true;
+              const finalScore = Math.floor(score);
+              try {
+                if (
+                  window.FarcadeSDK &&
+                  window.FarcadeSDK.singlePlayer &&
+                  window.FarcadeSDK.singlePlayer.actions
+                ) {
+                  window.FarcadeSDK.singlePlayer.actions.gameOver({
+                    score: finalScore,
+                  });
+                }
+              } catch (e) {}
+            }
+            return;
+          }
+
+          // Controls: keyboard and pointer -> produce a "move" value in [-1..1]
+          let move = 0;
+          if (
+            (cursors && cursors.left && cursors.left.isDown) ||
+            (keys && keys.A && keys.A.isDown)
+          )
+            move -= 1;
+          if (
+            (cursors && cursors.right && cursors.right.isDown) ||
+            (keys && keys.D && keys.D.isDown)
+          )
+            move += 1;
+
+          // Touch/pointer steering: relative to skier (fractional)
+          if (pointerActive) {
+            const dist = pointerX - skier.x;
+            const threshold = Math.max(12, W * 0.03);
+            if (Math.abs(dist) > threshold)
+              move += Phaser.Math.Clamp(dist / (W * 0.25), -1, 1);
+            else move += 0;
+          }
+
+          // Use move as target facing: -1 = front-left, 0 = straight (fastest), +1 = front-right
+          targetFacing = Phaser.Math.Clamp(move, -1, 1);
+
+          // Smooth facing angle and set sprite rotation (visual tilt)
+          facing = Phaser.Math.Linear(facing, targetFacing, 0.18);
+          try {
+            skier.setAngle(facing * 28); // tilt up to ~28 degrees
+          } catch (e) {}
+
+          // Steering used for lateral slide; keep smoothing for natural feel
+          steer = Phaser.Math.Linear(steer, move, 0.2);
+          skier.x += steer * 200 * dt;
+          skier.x = Phaser.Math.Clamp(skier.x, SAFE_MARGIN, W - SAFE_MARGIN);
+
+          // Effective forward speed: straight (facing ~0) => full speed; turning reduces forward speed
+          const turnSlowFactor = 0.45; // how much turning reduces forward speed at full tilt
+          const effSpeed = Math.max(
+            60,
+            speed * (1 - Math.abs(facing) * turnSlowFactor)
+          );
+
+          // Scroll trees and obstacles (move upward) using effective forward speed
+          obstacles.children.iterate((tree) => {
+            if (!tree) return;
+            // If this obstacle is a yeti, make it "chase" the skier laterally and move slightly slower than player
+            if (tree._isYeti) {
+              // vertical movement: slightly slower than effective player forward speed so it chases but is slightly slower
+              tree.y -= effSpeed * 0.5 * dt;
+
+              // lateral chase: smoothly move toward skier.x with a small offset jitter
+              const chaseStrength = 0.015; // how quickly it corrects lateral position
+              const targetX = Phaser.Math.Clamp(
+                skier.x + Phaser.Math.Between(-18, 18),
+                SAFE_MARGIN,
+                W - SAFE_MARGIN
+              );
+              tree.x = Phaser.Math.Linear(tree.x, targetX, chaseStrength);
+
+              // clamp to screen bounds
+              tree.x = Phaser.Math.Clamp(tree.x, SAFE_MARGIN, W - SAFE_MARGIN);
+            } else {
+              tree.y -= effSpeed * dt;
+            }
+            if (tree.y < -80) {
+              try {
+                tree.destroy();
+              } catch (e) {}
+            }
+          });
+
+          // Scroll gates
+          gates.children.iterate((gate) => {
+            if (!gate) return;
+            gate.y -= effSpeed * dt;
+            if (gate.y < -60) gate.destroy();
+          });
+
+          // Move and lightly fade persistent trail marks so they scroll with world (use effSpeed)
+          if (trailGroup) {
+            const marks = trailGroup.getChildren();
+            for (let i = marks.length - 1; i >= 0; i--) {
+              const m = marks[i];
+              if (!m) continue;
+              m.y -= effSpeed * dt;
+              if (m.vx) m.x += m.vx * dt;
+              m.alpha = Math.max(0.04, m.alpha - 0.02 * dt);
+              if (m.y < -80 || m.x < -120 || m.x > W + 120) {
+                try {
+                  m.destroy();
+                } catch (e) {}
+              }
+            }
+          }
+
+          // Trail drawing into render texture (white faint line) and black ski tracks
+          const dx = skier.x - lastTrailX;
+          const dy = skier.y - lastTrailY;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (alive && dist > 2) {
+            if (!isJumping) {
+              try {
+                const lineWidth = Math.max(
+                  2,
+                  Math.min(10, Math.floor(Math.abs(steer) * 10 + 2))
+                );
+                // draw faint white trail into trailTex (existing behavior)
+                trailGraphics.clear();
+                trailGraphics.lineStyle(lineWidth, 0xffffff, 0.18);
+                trailGraphics.beginPath();
+                trailGraphics.moveTo(lastTrailX, lastTrailY);
+                trailGraphics.lineTo(skier.x, skier.y);
+                trailGraphics.strokePath();
+                trailTex.draw(trailGraphics, 0, 0);
+                trailGraphics.clear();
+              } catch (e) {}
+
+              // draw two black ski-track lines offset from the path into blackTrailTex (persistent, darker)
+              try {
+                const len = Math.max(0.0001, Math.sqrt(dx * dx + dy * dy));
+                const nx = -dy / len; // normalized perpendicular
+                const ny = dx / len;
+                const offset = Phaser.Math.Clamp(
+                  8 + Math.abs(steer) * 6,
+                  6,
+                  18
+                ); // widen slightly when carving
+                const thickness = Phaser.Math.Clamp(
+                  3 + Math.abs(steer) * 2,
+                  3,
+                  6
+                );
+
+                trailGraphics.clear();
+                trailGraphics.lineStyle(thickness, 0x000000, 0.95);
+                trailGraphics.beginPath();
+                trailGraphics.moveTo(
+                  lastTrailX + nx * offset,
+                  lastTrailY + ny * offset
+                );
+                trailGraphics.lineTo(
+                  skier.x + nx * offset,
+                  skier.y + ny * offset
+                );
+                trailGraphics.strokePath();
+
+                trailGraphics.beginPath();
+                trailGraphics.moveTo(
+                  lastTrailX - nx * offset,
+                  lastTrailY - ny * offset
+                );
+                trailGraphics.lineTo(
+                  skier.x - nx * offset,
+                  skier.y - ny * offset
+                );
+                trailGraphics.strokePath();
+
+                blackTrailTex.draw(trailGraphics, 0, 0);
+                trailGraphics.clear();
+              } catch (e) {}
+              lastTrailX = skier.x;
+              lastTrailY = skier.y;
+            } else {
+              // in air: do not draw or emit particles, but update lastTrail to avoid large connecting lines on landing
+              lastTrailX = skier.x;
+              lastTrailY = skier.y;
+            }
+          }
+
+          const moving =
+            Math.abs(steer) > 0.02 ||
+            pointerActive ||
+            (cursors && (cursors.left.isDown || cursors.right.isDown)) ||
+            (keys && ((keys.A && keys.A.isDown) || (keys.D && keys.D.isDown)));
+
+          // only emit lineDot marks when not in the air
+          if (
+            alive &&
+            dist > 2 &&
+            !isJumping &&
+            (moving || Math.abs(steer) > 0.1)
+          ) {
+            const width = Math.max(
+              2,
+              Math.min(10, Math.floor(Math.abs(steer) * 10 + 2))
+            );
+            const spacing = Math.max(2, 4 - Math.floor(width / 3));
+            const segments = Math.max(1, Math.ceil(dist / spacing));
+            for (let i = 1; i <= segments; i++) {
+              const t = i / segments;
+              const px = Phaser.Math.Linear(lastTrailX, skier.x, t);
+              const py = Phaser.Math.Linear(lastTrailY, skier.y, t);
+              const mark = scene.add.image(px, py, "lineDot");
+              try {
+                mark.setDepth(1.2);
+              } catch (e) {}
+              const size = Phaser.Math.Between(
+                Math.max(2, width - 1),
+                width + 1
+              );
+              mark.setDisplaySize(size, size);
+              mark.setAlpha(Phaser.Math.FloatBetween(0.12, 0.28));
+              mark.vx =
+                Phaser.Math.FloatBetween(-6, 6) +
+                -steer * Phaser.Math.Between(0, 8);
+              // incorporate facing to give carved-look lateral shift
+              mark.vx += facing * Phaser.Math.Between(-4, 4);
+              trailGroup.add(mark);
+            }
+            lastTrailX = skier.x;
+            lastTrailY = skier.y;
+
+            const MAX_MARKS = 1200;
+            const children = trailGroup.getChildren();
+            if (children.length > MAX_MARKS) {
+              const toRemove = Math.ceil(children.length - MAX_MARKS);
+              for (let r = 0; r < toRemove; r++) {
+                const c = children[r];
+                try {
+                  c.destroy();
+                } catch (e) {}
+              }
+            }
+          }
+
+          // Score increases scaled by effective forward speed and multiplier (straight yields max score rate)
+          const scoreRateBase = 60;
+          score +=
+            (effSpeed / Math.max(60, baseSpeed)) *
+            scoreRateBase *
+            dt *
+            scoreMultiplier;
+          // Increase speed every 1000 points
+          if (score >= nextSpeedIncreaseScore) {
+            baseSpeed += 50; // Increase base speed
+            baseSpeed = Math.min(baseSpeed, 600);
+            speed = Math.max(speed, baseSpeed); // Update speed if needed
+            nextSpeedIncreaseScore += 1000; // Set next threshold
+          }
+          scoreText.setText("Score: " + Math.floor(score));
+        }
+
+        // Start game
+        game = new Phaser.Game(config);
+
+        // also poll globally for Farcade in case the SDK attaches after everything loads
+        const globalFarcadePoll = setInterval(() => {
+          tryAttachFarcade();
+          if (farcadeListenersAdded && farcadeReadyCalled)
+            clearInterval(globalFarcadePoll);
+        }, 500);
+        setTimeout(() => clearInterval(globalFarcadePoll), 20000);
+      })();
+    </script>
+  </body>
+</html>

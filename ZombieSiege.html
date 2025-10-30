@@ -1,0 +1,2270 @@
+<![DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fake Ad Shooter - UPGRADED!</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+      }
+      body {
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: "0x0000";
+        font-family: "Arial Black", Arial, sans-serif;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        touch-action: none;
+      }
+
+      /* Ensure the container always has usable size (fixes many embed platforms like remix) */
+      #game-container {
+        width: 100%;
+        max-width: 500px;
+        aspect-ratio: 2 / 3;
+        min-height: 300px; /* safety for very small embeds */
+
+        overflow: hidden;
+        background: "0x000000";
+
+        -webkit-user-select: none;
+        user-select: none;
+        touch-action: none;
+      }
+
+      #game-container canvas {
+        width: 100% !important;
+        height: 100% !important;
+        display: block;
+        image-rendering: pixelated;
+        touch-action: none;
+        user-select: none;
+      }
+    </style>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@0.2.1/dist/index.min.js"></script>
+  </head>
+  <body>
+    <div id="game-container"></div>
+    <script>
+      window.__isMuted = false;
+      let loadingText;
+
+      class BootScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "BootScene" });
+        }
+        preload() {
+          // Load splash bg PNG
+          this.load.image(
+            "splashbg",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Gemini_Generated_Image_e2xejve2xejve2xe-zMDJuQ3LxmS9ZSkfXV84xhg0dzeQ5t.png?3dzj"
+          );
+
+          this.load.spritesheet(
+            "vibedeploy", // same key the old code used
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Black%20and%20White%20Skull%20Game%20Over%20Animated%20Logo-uiFuD29sTrgWdVjHeCe4s04pOb9GmY.png?XwIX",
+            { frameWidth: 100, frameHeight: 100 }
+          );
+
+          this.load.audio(
+            "openingsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/distortion-bass-01-brvhrtz-225059-pOBSamV9SgnpN31GnjD2soyPwzkwt8.mp3?VPMX"
+          );
+
+          /* 2.  Declare the animations once, right here in preload() */
+          this.load.on("complete", () => {
+            // runs once everything is loaded
+            this.anims.create({
+              key: "vibedeployplay",
+              frames: this.anims.generateFrameNumbers("vibedeploy", {
+                start: 0,
+                end: 5,
+              }),
+              frameRate: 12,
+              repeat: -1,
+            });
+
+            /* add more animations if you have extra rows / clips */
+            // this.anims.create({ key: 'run', frames: this.anims.generateFrameNumbers('player', { start: 8, end: 15 }), frameRate: 16, repeat: -1 });
+          });
+        }
+
+        create() {
+          const { width, height } = this.cameras.main;
+          this.cameras.main.setBackgroundColor("#000");
+          const vibedeploy = this.add.sprite(
+            width / 2,
+            height / 2,
+            "vibedeploy"
+          );
+          vibedeploy.setScale(2);
+          vibedeploy.play("vibedeployplay");
+
+          this.time.delayedCall(1500, () => {
+            this.cameras.main.fadeOut(500, 0, 0, 0); // 500 ms fade-to-black
+            this.cameras.main.once(
+              Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+              () => {
+                this.scene.start("LoadingScene"); // your next scene
+              }
+            );
+          });
+        }
+      }
+
+      class LoadingScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "LoadingScene" });
+        }
+
+        preload() {
+          // Load font first
+          this.loadFontPromise = document.fonts.load('16px "Bebas Neue"');
+          // Create more visually appealing textures
+          this.createPlayerTexture();
+          this.createEnemyTextures();
+          this.createBulletTexture();
+
+          this.createParticleTextures();
+          this.createBossTexture();
+
+          this.load.image(
+            "ground",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/ground-UQoNeERJEGMJTpSZdLuMtfjZ64kthq.png?dMp4"
+          );
+          this.load.image(
+            "crack1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/cracks_asphalt_0000_Layer-4-Zfi8sChDooJBg9WZd0cAJ0DB8vrduf.png?khm1"
+          );
+          this.load.image(
+            "crack2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/cracks_asphalt_0001_Layer-1-ISZPVJDDUibTENSN7dDFWAp3FBZYfJ.png?mcoA"
+          );
+          this.load.image(
+            "crack3",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/cracks_asphalt_0002_Layer-2-IbQox7jUFyHgQemnEDboibkl3MDYzq.png?pHTJ"
+          );
+          this.load.image(
+            "crack4",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/cracks_asphalt_0003_Layer-3-zl4tj2aUVRV1M22M2qa9ODBpczhQgu.png?v4Er"
+          );
+
+          this.load.image(
+            "powerup",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/juice-AMeffHlV5K4KdvthnwCKdRaB5liUId.png?nmED"
+          );
+
+          this.load.image(
+            "gate_bad",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/red-EHO4lVhPKzS9Nw2MjHagZmQbA2wCOx.png?XrYd"
+          );
+
+          this.load.image(
+            "gate_good",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/blue-mAhG7OfW2aVcnTHDIwVAcUUx6dkiF6.png?AJj2"
+          );
+          this.load.image(
+            "gate_multiply",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/blue-mAhG7OfW2aVcnTHDIwVAcUUx6dkiF6.png?AJj2"
+          );
+
+          this.load.audio(
+            "shootsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/shot-No8u1rwyDkjowZMvuhfZefm3N1ruT7.mp3?yaGf"
+          );
+
+          this.load.audio(
+            "zombiehit1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/zombie_shot-gVMLbAUhXQYtrtgqgMXXzn2lAbnRJD.mp3?IZXc"
+          );
+
+          this.load.audio(
+            "zombiehit2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/1-Z7pgyOcUTo33YgX3A78Ye70bn4zrXm.mp3?aUQ7"
+          );
+
+          this.load.audio(
+            "zombiehit3",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/2-JYxAv4MbSjjp81RW5dkowfIddKrae8.mp3?fDR6"
+          );
+
+          this.load.audio(
+            "zombiehit4",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/3-SsJndBBpRlrYujwDBQNx2T9nv8kPLW.mp3?wkT6"
+          );
+
+          this.load.audio(
+            "powerupsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/gated-alsorPcjdV1ft0yCKyb8ZtR39zpHm9.mp3?5eYm"
+          );
+
+          this.load.audio(
+            "powerdownsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/gated-alsorPcjdV1ft0yCKyb8ZtR39zpHm9.mp3?5eYm"
+          );
+
+          this.load.audio(
+            "pickupspeedsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/druug-tuR1v57fpNJhsw3O0Wwq3Hhlx72Rxd.mp3?bQga"
+          );
+
+          this.load.audio(
+            "music",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/act-QSXZ6qqUgIpDHBWe8VizZwTitLfly8.mp3?UJfW"
+          );
+
+          this.load.audio(
+            "bossspawnsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/s-M6v04viWUSdEKinqb74QBFT2B226y2.mp3?chMm"
+          );
+
+          this.load.audio(
+            "bossretreatsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/r-ZZWOybIxze7XVbmKXvLR5DP0wbpRI4.mp3?0gc4"
+          );
+
+          this.load.audio(
+            "bossattacksound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/a-aAhabGGxhkuTFjiERKfCuNeWQGv1px.mp3?y1eg"
+          );
+
+          this.load.audio(
+            "bossdeathsound",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/d-o11JYZpc91kAOnF27KD5CHtfqAXtGH.mp3?5AU1"
+          );
+
+          this.load.audio(
+            "chewbubblegum",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/chewbubblegum-95G98XLSOJJ2CJ70AsRWCXkmwpvdLl.mp3?Qjlq"
+          );
+
+          this.load.audio(
+            "letsgo",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/letsgo-YWDnupBLc1l4BiDppHu4fHKYYjEPX1.mp3?aiWN"
+          );
+
+          this.load.audio(
+            "justwhatineed",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/justwhatineed-BiKWRytfTuKvdGRsblUtAkE7c3w7NR.mp3?xtGt"
+          );
+
+          this.load.audio(
+            "tryagain",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/tryagain-sBk9RsxlzuLfCIjbjjwHjQ2qTSzuVY.mp3?FbI4"
+          );
+
+          // Optional: Add loading text or bar
+          const { width, height } = this.cameras.main;
+          this.cameras.main.fadeIn(500, 0, 0, 0);
+
+          this.sound.play("openingsound", { volume: 0.5 });
+          this.add
+            .image(width / 2, height / 2, "splashbg")
+            .setOrigin(0.5)
+
+            .setDisplaySize(width, height)
+            .setDepth(0);
+
+          loadingText = this.add
+            .text(width / 2, height / 2, "Loading...", {
+              fontFamily: '"Bebas Neue"',
+              fontSize: "12px",
+              fill: "#ffffff",
+            })
+            .setOrigin(0.5);
+
+          // You can also add a loading bar here if you want
+          this.load.on("progress", (value) => {
+            loadingText.setText(`Loading... ${Math.round(value * 100)}%`);
+          });
+        }
+
+        createPlayerTexture() {
+          /* 1.  Load the spritesheet
+               32×32 is the frame size; change to whatever you exported */
+          this.load.spritesheet(
+            "player", // same key the old code used
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Walk_riffle_000-sheet-afYVOnaZIEfmzBny8qDrNXYeVBajyc.png?Naz8",
+            { frameWidth: 35, frameHeight: 58 }
+          );
+
+          this.load.spritesheet(
+            "playershoot", // same key the old code used
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Riffle_000-sheet-ta7JMcrzMdsWs4ZtUoS8tCQwZgeant.png?G0vE",
+            { frameWidth: 35, frameHeight: 96 }
+          );
+
+          /* 2.  Declare the animations once, right here in preload() */
+          this.load.on("complete", () => {
+            // runs once everything is loaded
+            this.anims.create({
+              key: "idle",
+              frames: this.anims.generateFrameNumbers("player", {
+                start: 0,
+                end: 5,
+              }),
+              frameRate: 12,
+              repeat: -1,
+            });
+
+            this.anims.create({
+              key: "shoot",
+              frames: this.anims.generateFrameNumbers("playershoot", {
+                start: 0,
+                end: 5,
+              }),
+              frameRate: 12,
+            });
+
+            /* add more animations if you have extra rows / clips */
+            // this.anims.create({ key: 'run', frames: this.anims.generateFrameNumbers('player', { start: 8, end: 15 }), frameRate: 16, repeat: -1 });
+          });
+        }
+        createEnemyTextures() {
+          /* 1.  Load the three sprite-sheets
+               (frame size 32×32 – change to whatever you exported) */
+          this.load.spritesheet(
+            "enemy1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Walk_000-sheet-fX3D1XV59sxOmGkvBUdYL8xhPHzpTk.png?VZkI",
+            { frameWidth: 38, frameHeight: 44 }
+          );
+          this.load.spritesheet(
+            "enemy2",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/walk_000-sheet-rWK6bjOydol1hB9EkdflkAVaGeSdPc.png?0V3P",
+            { frameWidth: 43, frameHeight: 42 }
+          );
+          this.load.spritesheet(
+            "enemy3",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Walk_000-sheet-4k6fN377KoIhdttsrBuIfHVB6CTJJ9.png?Nihs",
+            { frameWidth: 44, frameHeight: 45 }
+          );
+          this.load.spritesheet(
+            "enemy4",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Walk_000-sheet-qQs5vub5ivadrFnA3ZN4qdvM5pb0jT.png?HgBR",
+            { frameWidth: 34, frameHeight: 39 }
+          );
+
+          this.load.spritesheet(
+            "enemy5",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/walk_000-sheet-j8keAugpdlHgTEMSRr4lYco5NWatPA.png?SaaP",
+            { frameWidth: 45, frameHeight: 49 }
+          );
+          this.load.spritesheet(
+            "enemy6",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/walk_000-sheet-qTaXKmVjo6tAH0gIiGRoGl0PqEcncV.png?M62E",
+            { frameWidth: 48, frameHeight: 55 }
+          );
+
+          this.load.spritesheet(
+            "enemy7",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/walk_000-sheet-q9fj6D3tpHT2UFX4lQBHfOQFyT4fW3.png?0p2u",
+            { frameWidth: 66, frameHeight: 63 }
+          );
+          this.load.spritesheet(
+            "enemy8",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/walk_000-sheet-wWV7tn1zGhKkeD6Gob7atgHuxJwesJ.png?SIaq",
+            { frameWidth: 69, frameHeight: 67 }
+          );
+
+          /* 2.  Create the animations once, here in preload() */
+          this.load.on("complete", () => {
+            const createAnim = (key, sheet, start, end, fps = 12) => {
+              if (!this.anims.exists(key)) {
+                this.anims.create({
+                  key,
+                  frames: this.anims.generateFrameNumbers(sheet, {
+                    start,
+                    end,
+                  }),
+                  frameRate: fps,
+                  repeat: -1,
+                });
+              }
+            };
+
+            createAnim("enemy1-fly", "enemy1", 0, 8); // 9-frame loop
+            createAnim("enemy2-fly", "enemy2", 0, 8);
+            createAnim("enemy3-fly", "enemy3", 0, 8);
+            createAnim("enemy4-fly", "enemy4", 0, 8);
+            createAnim("enemy5-fly", "enemy5", 0, 8);
+            createAnim("enemy6-fly", "enemy6", 0, 8);
+            createAnim("enemy7-fly", "enemy7", 0, 8);
+            createAnim("enemy8-fly", "enemy8", 0, 8);
+          });
+        }
+
+        createBossTexture() {
+          this.load.spritesheet(
+            "boss", // same key the old code used
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/Walk_000-sheet-2MKbmFc2FMHA9tIqyddiDhnjSeQORH.png?YwM7",
+            { frameWidth: 161, frameHeight: 144 }
+          );
+
+          this.load.spritesheet(
+            "bossattack", // same key the old code used
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/c348fb9f-4c96-447a-a9c7-1abd848b4aed/attack1_000-sheet-dJdSiuCVoCpfPD33vfvrjy0mepZ0wh.png?rPkf",
+            { frameWidth: 206, frameHeight: 146 }
+          );
+
+          /* 2.  Declare the animations once, right here in preload() */
+          this.load.on("complete", () => {
+            // runs once everything is loaded
+            this.anims.create({
+              key: "bosswalk",
+              frames: this.anims.generateFrameNumbers("boss", {
+                start: 0,
+                end: 7,
+              }),
+              frameRate: 12,
+              repeat: -1,
+            });
+
+            this.anims.create({
+              key: "bossattacking",
+              frames: this.anims.generateFrameNumbers("bossattack", {
+                start: 0,
+                end: 15,
+              }),
+              frameRate: 12,
+              repeat: -1,
+            });
+
+            /* add more animations if you have extra rows / clips */
+            // this.anims.create({ key: 'run', frames: this.anims.generateFrameNumbers('player', { start: 8, end: 15 }), frameRate: 16, repeat: -1 });
+          });
+        }
+
+        createBulletTexture() {
+          // Make bullets little yellow circles instead of rounded rects
+          const g = this.add.graphics();
+          const size = 10;
+          const radius = 4;
+          g.fillStyle(0xffff00, 1);
+          g.fillCircle(size / 2, size / 2, radius);
+          g.lineStyle(1, 0xffffff, 0.6);
+          g.strokeCircle(size / 2, size / 2, radius);
+          g.generateTexture("bullet", size, size);
+          g.destroy();
+        }
+
+        createParticleTextures() {
+          // Various particle effects
+          const particles = [
+            { name: "spark", color: 0xffff00, size: 4 },
+            { name: "fire", color: 0xff4400, size: 6 },
+            { name: "ice", color: 0x44ffff, size: 5 },
+          ];
+
+          particles.forEach((p) => {
+            const g = this.add.graphics();
+            g.fillStyle(p.color);
+            g.fillCircle(p.size / 2, p.size / 2, p.size / 2);
+            g.generateTexture(p.name, p.size, p.size);
+            g.destroy();
+          });
+        }
+
+        async create() {
+          const { width, height } = this.cameras.main;
+
+          // Background
+          this.add
+            .image(width / 2, height / 2, "splashbg")
+            .setOrigin(0.5)
+            .setDisplaySize(width, height)
+            .setDepth(0);
+
+          // Wait for font to load
+          await this.loadFontPromise;
+
+          console.log("Font loaded, starting game...");
+
+          // Optional: remove any loading text/graphics
+          if (loadingText) loadingText.destroy();
+
+          // === Replace Play Button with "Tap Anywhere To Play" text ===
+          const tapText = this.add
+            .text(width / 2, height / 2 + 190, "TAP TO PLAY", {
+              fontFamily: '"Bebas Neue"',
+              fontSize: "28px",
+              fill: "#ffffff",
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Fade in/out pulsing effect
+          this.tweens.add({
+            targets: tapText,
+            alpha: { from: 0.3, to: 1 },
+            scale: { from: 1, to: 1.1 },
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+            ease: "Sine.easeInOut",
+          });
+
+          // Tap anywhere to start
+          this.input.once("pointerdown", () => {
+            this.scene.start("GameScene");
+          });
+
+          // Instructions (unchanged)
+          const instructions = this.add
+            .text(width / 2, height - 50, "Use arrow keys\nor swipe to move.", {
+              fontFamily: '"Bebas Neue"',
+              fontSize: "20px",
+              fill: "#ffffff",
+              align: "center",
+              lineSpacing: 6,
+            })
+            .setOrigin(0.5);
+        }
+      }
+
+      class GameScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "GameScene" });
+        }
+
+        preload() {}
+
+        create() {
+          // Use actual render size so game fills the remix embed correctly
+          this.gameWidth = this.scale.width;
+          this.gameHeight = this.scale.height;
+          this._ended = false;
+
+          this.sound.play("music", {
+            volume: 0.3,
+            detune: Phaser.Math.Between(-70, 70),
+            loop: true,
+          });
+          this.sound.play("chewbubblegum", { volume: 1 });
+
+          // Scroll speed used for background and cracks (consistent Y speed)
+          this.scrollSpeed = 0.3; // constant per requirement: same speed each time
+
+          // Adjusted difficulty for slower ramp and easier start (longer game)
+          this.difficulty = {
+            playerSpeed: 7,
+            enemySpeedMin: 0.6,
+            enemySpeedMax: 2.5,
+            enemiesPerWave: 2,
+            waveDelay: 5000, // start slower so first waves are more relaxed
+            gateFrequency: 1,
+            powerupChance: 0.12,
+            bossWaveInterval: 10,
+          };
+
+          // Groups
+          this.enemies = this.add.group();
+          this.bullets = this.add.group();
+          this.gates = this.add.group();
+          this.powerups = this.add.group();
+          this.effects = this.add.group();
+          this.bosses = this.add.group();
+
+          // Cracks group for ground detail
+          this.cracks = this.add.group();
+
+          // Add full-screen ground background as a TileSprite so it scrolls infinitely
+          this.ground = this.add
+            .tileSprite(
+              this.gameWidth / 2,
+              this.gameHeight / 2,
+              this.gameWidth,
+              this.gameHeight,
+              "ground"
+            )
+            .setOrigin(0.5)
+            .setDepth(-10)
+            .setScrollFactor(0);
+
+          // Tint overlay to replace camera.setTint (Phaser Camera doesn't expose setTint)
+          this.tintOverlay = this.add
+            .rectangle(
+              this.gameWidth / 2,
+              this.gameHeight / 2,
+              this.gameWidth,
+              this.gameHeight,
+              0x000000,
+              0
+            )
+            .setDepth(50)
+            .setScrollFactor(0)
+            .setVisible(true);
+
+          // Start spawning cracks to simulate movement on the ground (walking up effect)
+          this.spawnCrackTimer = this.time.addEvent({
+            delay: 6700,
+            callback: this.spawnCrack,
+            callbackScope: this,
+            loop: true,
+          });
+
+          // Player with glowing trail effect
+          const startX = this.gameWidth / 2;
+          const startY = this.gameHeight - 70;
+          this.player = this.add.sprite(startX, startY, "player");
+          this.player.play("idle");
+
+          // Enhanced input
+          this.cursors = this.input.keyboard.createCursorKeys();
+          this.aKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.A
+          );
+          this.dKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.D
+          );
+
+          // Touch controls with visual feedback
+          this.input.on("pointermove", (pointer) => {
+            const worldPoint = pointer.positionToCamera(this.cameras.main);
+            this.player.x = Phaser.Math.Clamp(
+              worldPoint.x,
+              16,
+              this.gameWidth - 16
+            );
+          });
+
+          // Game state with more variables
+          this.score = 0;
+          this.firepower = 1;
+          this.maxFirepower = 10;
+          this.enemiesKilled = 0;
+          this.waveTimer = 0;
+          this.enemyWave = 1;
+          this.combo = 0;
+          this.maxCombo = 0;
+          this.specialMode = false;
+          this.specialModeTimer = 0;
+          this.comboTimer = 0; // ms until combo resets
+          this.bossActive = false;
+          this._bossClearedProcessing = false;
+
+          // Enhanced HUD with more flair
+          this.scoreText = this.add
+            .text(16, 16, "SCORE: 0", {
+              fontSize: "28px",
+              fontFamily: '"Bebas Neue"',
+              fill: "#FFD700",
+              fontWeight: "bold",
+              stroke: "#000000",
+              strokeThickness: 3,
+            })
+            .setScrollFactor(0)
+            .setDepth(100);
+
+          this.firepowerText = this.add
+            .text(16, 55, "POWER: 1.0x", {
+              fontSize: "22px",
+              fontFamily: '"Bebas Neue"',
+              fill: "#00FF00",
+              fontWeight: "bold",
+              stroke: "#000000",
+              strokeThickness: 2,
+            })
+            .setScrollFactor(0)
+            .setDepth(100);
+
+          this.comboText = this.add
+            .text(this.gameWidth - 16, 55, "COMBO: 0", {
+              fontSize: "20px",
+              fontFamily: '"Bebas Neue"',
+              fill: "#FF4444",
+              fontWeight: "bold",
+              stroke: "#000000",
+              strokeThickness: 2,
+            })
+            .setOrigin(1, 0)
+            .setScrollFactor(0)
+            .setDepth(100);
+
+          this.waveText = this.add
+            .text(this.gameWidth - 16, 16, "WAVE: 1", {
+              fontSize: "24px",
+              fontFamily: '"Bebas Neue"',
+              fill: "#FF8800",
+              fontWeight: "bold",
+              stroke: "#000000",
+              strokeThickness: 2,
+            })
+            .setOrigin(1, 0)
+            .setScrollFactor(0)
+            .setDepth(100);
+
+          // Auto-shoot with variable rate
+          this.autoShootTimer = this.time.addEvent({
+            delay: 250,
+            callback: this.autoShoot,
+            callbackScope: this,
+            loop: true,
+          });
+
+          // Start with immediate action
+          this.spawnWave();
+
+          // Camera background color
+          this.cameras.main.setBackgroundColor("#0a0520");
+
+          // Listen for runtime resize so the game adapts in remix/embed environments
+          this.scale.on("resize", (gameSize) => {
+            const w = gameSize.width;
+            const h = gameSize.height;
+            this.onResize(w, h);
+          });
+
+          // Farcade SDK ready
+          if (window.FarcadeSDK?.singlePlayer?.actions?.ready) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.ready();
+            } catch (e) {
+              console.warn("Farcade ready() failed", e);
+            }
+          }
+        }
+
+        // Spawn a single crack sprite near the top that moves downward to simulate walking up
+        spawnCrack() {
+          if (this._ended) return;
+          const keys = ["crack1", "crack2", "crack3", "crack4"];
+          const key = Phaser.Utils.Array.GetRandom(keys);
+          const x = Phaser.Math.Between(20, Math.max(40, this.gameWidth - 20));
+          const y = Phaser.Math.Between(-40, -8);
+          const crack = this.add.image(x, y, key).setOrigin(0.5, 0);
+          // place above ground but under gameplay elements
+          crack.setDepth(-9);
+          // random slight scale & alpha for variety
+          const s = Phaser.Math.FloatBetween(0.6, 1.05);
+          crack.setScale(s);
+          crack.alpha = Phaser.Math.FloatBetween(0.7, 1);
+          // Use consistent scrollSpeed for all cracks so Y speed is the same each time
+          crack.speed = this.scrollSpeed;
+          this.cracks.add(crack);
+        }
+
+        // Handle dynamic resizing to parent container (fixes remix embed sizing)
+        onResize(newWidth, newHeight) {
+          // Update stored sizes
+          this.gameWidth = Math.max(200, Math.round(newWidth));
+          this.gameHeight = Math.max(300, Math.round(newHeight));
+
+          // Update ground background to cover new size
+          if (this.ground) {
+            this.ground.setPosition(this.gameWidth / 2, this.gameHeight / 2);
+            this.ground.setDisplaySize(this.gameWidth, this.gameHeight);
+          }
+
+          // Update tint overlay to cover new size
+          if (this.tintOverlay) {
+            this.tintOverlay.setSize(this.gameWidth, this.gameHeight);
+            this.tintOverlay.setPosition(
+              this.gameWidth / 2,
+              this.gameHeight / 2
+            );
+          }
+
+          // Reposition HUD elements to maintain consistent margins
+          if (this.scoreText) this.scoreText.setPosition(16, 16);
+          if (this.firepowerText) this.firepowerText.setPosition(16, 55);
+          if (this.comboText) this.comboText.setPosition(16, 90);
+          if (this.waveText) this.waveText.setPosition(this.gameWidth - 16, 16);
+
+          // Clamp player inside new bounds and keep near bottom
+          if (this.player) {
+            this.player.x = Phaser.Math.Clamp(
+              this.player.x,
+              16,
+              this.gameWidth - 16
+            );
+            this.player.y = Phaser.Math.Clamp(
+              this.gameHeight - 50,
+              24,
+              this.gameHeight - 24
+            );
+          }
+
+          // Update gates' labels and clamp gate x positions
+          this.gates.children.entries.forEach((gate) => {
+            if (!gate) return;
+            // Ensure gate doesn't go beyond screen horizontally
+            gate.x = Phaser.Math.Clamp(
+              gate.x,
+              gate.displayWidth / 2,
+              this.gameWidth - gate.displayWidth / 2
+            );
+            if (gate.label) {
+              gate.label.x = gate.x;
+              gate.label.y = gate.y;
+            }
+            // Resize gate width proportionally if displayWidth mismatches
+            gate.setDisplaySize(this.gameWidth / 2, 40);
+          });
+
+          // Update powerups/enemies to stay on-screen
+          this.enemies.children.entries.forEach((e) => {
+            if (!e) return;
+            e.x = Phaser.Math.Clamp(e.x, 15, this.gameWidth - 15);
+            e.y = Phaser.Math.Clamp(e.y, -1000, this.gameHeight + 1000);
+          });
+          this.powerups.children.entries.forEach((p) => {
+            if (!p) return;
+            p.x = Phaser.Math.Clamp(p.x, 16, this.gameWidth - 16);
+          });
+
+          // Clamp bosses
+          this.bosses.children.entries.forEach((b) => {
+            if (!b) return;
+            b.x = Phaser.Math.Clamp(b.x, 30, this.gameWidth - 30);
+            if (b.healthBarGraphics) {
+              b.healthBarGraphics.setPosition(0, 0);
+            }
+          });
+
+          // Clamp cracks and optionally reposition them horizontally if out of bounds
+          this.cracks.children.entries.forEach((c) => {
+            if (!c) return;
+            c.x = Phaser.Math.Clamp(c.x, 12, this.gameWidth - 12);
+            // if crack is below the screen after resize, destroy it
+            if (c.y > this.gameHeight + 60) {
+              c.destroy();
+            }
+          });
+        }
+
+        // Tint overlay helpers (replace camera.setTint usage)
+        setCameraTint(color, alpha = 0.12) {
+          if (this.tintOverlay) {
+            this.tintOverlay.setFillStyle(color, alpha);
+          }
+        }
+        clearCameraTint() {
+          if (this.tintOverlay) {
+            this.tintOverlay.setFillStyle(0x000000, 0);
+          }
+        }
+
+        update(time, delta) {
+          if (this._ended) return;
+
+          // normalized dt factor (~60fps)
+          const dtFactor = delta / 16.6667;
+
+          // Scroll the tiled background down at consistent speed (infinite style)
+          if (this.ground) {
+            this.ground.tilePositionY -= this.scrollSpeed * dtFactor;
+          }
+
+          this.handleInput();
+          this.updateBullets();
+          this.updateEnemies(delta);
+          this.updateBosses && this.updateBosses(delta);
+          this.updateGates();
+          this.updatePowerups();
+
+          this.updateCracks(delta); // update ground crack movement
+
+          this.checkCollisions();
+          this.handleWaves(delta);
+          this.updateSpecialMode(delta);
+          this.updateComboTimer(delta);
+          this.updateUI();
+        }
+
+        // Update cracks: move downward and destroy when off-screen
+        updateCracks(delta) {
+          const dtFactor = delta / 16.6667; // normalize to ~60fps steps
+          this.cracks.children.entries.forEach((crack) => {
+            if (!crack || !crack.active) return;
+            crack.y += (crack.speed || this.scrollSpeed) * dtFactor;
+
+            if (crack.y > this.gameHeight + 60) {
+              crack.destroy();
+            }
+          });
+        }
+
+        updateComboTimer(delta) {
+          if (this.comboTimer > 0) {
+            this.comboTimer -= delta;
+            if (this.comboTimer <= 0) {
+              this.combo = 0;
+              this.comboText.setText(`COMBO: ${this.combo}`);
+            }
+          }
+        }
+
+        updateSpecialMode(delta) {
+          if (this.specialMode) {
+            this.specialModeTimer -= delta;
+            if (this.specialModeTimer <= 0) {
+              this.specialMode = false;
+              // Clear tint overlay instead of calling camera.setTint (which doesn't exist)
+              this.clearCameraTint();
+              this.autoShootTimer.delay = 250;
+            }
+          }
+        }
+
+        updateUI() {
+          // Add pulsing effects to important text
+          if (this.combo > 5) {
+            this.comboText.setScale(1 + Math.sin(this.time.now * 0.01) * 0.1);
+          } else {
+            this.comboText.setScale(1);
+          }
+
+          if (this.specialMode) {
+            // keep text tinting as-is (text supports setTint)
+            this.firepowerText.setTint(
+              Phaser.Display.Color.HSVToRGB(this.time.now * 0.001, 1, 1).color
+            );
+          } else {
+            // clear text tint when not in special mode
+            if (this.firepowerText.clearTint) this.firepowerText.clearTint();
+          }
+        }
+
+        handleInput() {
+          let moved = false;
+          if (this.cursors.left.isDown || this.aKey.isDown) {
+            this.player.x -= this.difficulty.playerSpeed;
+            moved = true;
+          }
+          if (this.cursors.right.isDown || this.dKey.isDown) {
+            this.player.x += this.difficulty.playerSpeed;
+            moved = true;
+          }
+
+          this.player.x = Phaser.Math.Clamp(
+            this.player.x,
+            16,
+            this.gameWidth - 16
+          );
+
+          // Player tilt based on movement
+          if (moved) {
+            const direction =
+              this.cursors.right.isDown || this.dKey.isDown ? 1 : -1;
+            this.player.rotation = direction * 0.1;
+          } else {
+            this.player.rotation *= 0.9;
+          }
+        }
+
+        autoShoot() {
+          if (this._ended) return;
+
+          const MAX_BULLETS = this.specialMode ? 50 : 35;
+          const activeBullets = this.bullets.countActive(true);
+          if (activeBullets >= MAX_BULLETS) return;
+
+          const enemies = [
+            ...this.enemies.getChildren(),
+            ...this.bosses.getChildren(),
+          ].filter((e) => e.active);
+          if (enemies.length === 0) return;
+
+          // Smart targeting: prioritize closest enemies (bosses naturally can be targeted too)
+          let targets = enemies.slice().sort((a, b) => {
+            const distA = Phaser.Math.Distance.Between(
+              this.player.x,
+              this.player.y,
+              a.x,
+              a.y
+            );
+            const distB = Phaser.Math.Distance.Between(
+              this.player.x,
+              this.player.y,
+              b.x,
+              b.y
+            );
+            return distA - distB;
+          });
+
+          const bulletsToFire = Math.max(1, Math.floor(this.firepower));
+          const targetsToHit = Math.min(bulletsToFire, targets.length);
+
+          this.sound.play("shootsound", {
+            volume: 0.3,
+            detune: Phaser.Math.Between(-70, 70),
+          });
+
+          for (let i = 0; i < targetsToHit; i++) {
+            if (i === 0) {
+              this.player.play("shoot");
+              this.player.once("animationcomplete", () =>
+                this.player.play("idle")
+              );
+            }
+            const target = targets[i % targets.length];
+            const spread = i > 0 ? (i - targetsToHit / 2) * 10 : 0;
+
+            const dx = target.x - this.player.x;
+            const dy = target.y - (this.player.y - 25);
+            const angle = Math.atan2(dy, dx);
+            const speed = 9 + (this.specialMode ? 3 : 0);
+
+            const bullet = this.add.sprite(
+              this.player.x,
+              this.player.y - 25,
+              "bullet"
+            );
+            bullet.damage = this.specialMode ? 2 : 1;
+            bullet.velX = Math.cos(angle) * speed;
+            bullet.velY = Math.sin(angle) * speed;
+            bullet.rotation = angle + Math.PI / 2;
+
+            this.bullets.add(bullet);
+          }
+        }
+
+        handleWaves(delta) {
+          // If current wave is a boss wave and the boss is active, do not start the next wave until boss cleared.
+          if (
+            this.bossActive &&
+            this.enemyWave % this.difficulty.bossWaveInterval === 0
+          ) {
+            // keep timers paused for wave progression while boss fights
+            return;
+          }
+
+          this.waveTimer += delta;
+          if (this.waveTimer > this.difficulty.waveDelay) {
+            // Increment wave first so spawnWave uses correct wave number and announcement matches what spawned
+            this.enemyWave++;
+            // Ramp down wave delay slowly so the game lengthens
+            this.difficulty.waveDelay = Math.max(
+              4000,
+              this.difficulty.waveDelay * 0.999
+            );
+
+            // Boss wave handling
+            if (this.enemyWave % this.difficulty.bossWaveInterval === 0) {
+              this.spawnBoss();
+            } else {
+              this.spawnWave();
+              // Spawn gates and powerups
+              for (let i = 0; i < this.difficulty.gateFrequency; i++) {
+                this.spawnGate();
+              }
+            }
+
+            if (Math.random() < this.difficulty.powerupChance) {
+              this.spawnPowerup();
+            }
+
+            // Update wave HUD immediately
+            if (this.waveText) this.waveText.setText(`WAVE: ${this.enemyWave}`);
+
+            // Wave announcement
+            this.showWaveAnnouncement();
+
+            this.waveTimer = 0;
+          }
+        }
+
+        // Called when a boss is defeated to ensure the next wave only starts afterwards.
+        onBossCleared() {
+          if (this._bossClearedProcessing) return;
+          this._bossClearedProcessing = true;
+
+          // Show "BOSS CLEARED" message
+          const txt = this.add
+            .text(
+              this.gameWidth / 2,
+              this.gameHeight / 2 - 10,
+              "BOSS CLEARED\nMAX POWER +1",
+              {
+                fontSize: "40px",
+                fontFamily: '"Bebas Neue"',
+                fill: "#00FF88",
+                fontWeight: "bold",
+                stroke: "#000000",
+                strokeThickness: 4,
+              }
+            )
+            .setOrigin(0.5)
+            .setDepth(300)
+            .setAlpha(0);
+
+          this.tweens.add({
+            targets: txt,
+            alpha: 1,
+            scale: { from: 0.8, to: 1.05 },
+            duration: 300,
+          });
+
+          // After a short pause, start the next wave immediately
+          this.time.delayedCall(1200, () => {
+            try {
+              // increment to next wave and spawn it
+              this.enemyWave++;
+              if (this.waveText)
+                this.waveText.setText(`WAVE: ${this.enemyWave}`);
+
+              // Show wave announcement for clarity
+              this.showWaveAnnouncement();
+
+              // Spawn normal wave content
+              this.spawnWave();
+              for (let i = 0; i < this.difficulty.gateFrequency; i++) {
+                this.spawnGate();
+              }
+              if (Math.random() < this.difficulty.powerupChance) {
+                this.spawnPowerup();
+              }
+            } finally {
+              // fade out message cleanly
+              this.tweens.add({
+                targets: txt,
+                alpha: 0,
+                duration: 600,
+                delay: 400,
+                onComplete: () => txt.destroy(),
+              });
+              this._bossClearedProcessing = false;
+            }
+          });
+        }
+
+        showWaveAnnouncement() {
+          const isBoss =
+            this.enemyWave % this.difficulty.bossWaveInterval === 0;
+          const text = isBoss ? `BOSS WAVE!` : `WAVE ${this.enemyWave}`;
+          const waveText = this.add
+            .text(this.gameWidth / 2, this.gameHeight / 2, text, {
+              fontSize: isBoss ? "56px" : "48px",
+              fontFamily: '"Bebas Neue"',
+              fill: isBoss ? "#FF4444" : "#FFD700",
+              fontWeight: "bold",
+              stroke: "#000000",
+              strokeThickness: 4,
+            })
+            .setOrigin(0.5)
+            .setAlpha(0);
+
+          this.tweens.add({
+            targets: waveText,
+            alpha: 1,
+            scale: { from: 0.5, to: 1.2 },
+            duration: isBoss ? 500 : 300,
+            yoyo: true,
+            onComplete: () => waveText.destroy(),
+          });
+
+          this.cameras.main.shake(isBoss ? 350 : 200, isBoss ? 0.03 : 0.02);
+        }
+
+        spawnWave() {
+          const MAX_ENEMIES = 50;
+          const currentEnemies = this.enemies.countActive(true);
+          // slower enemy count growth to lengthen gameplay
+          const baseCount =
+            this.difficulty.enemiesPerWave + Math.floor(this.enemyWave / 2);
+          const count = Math.min(baseCount, MAX_ENEMIES - currentEnemies);
+
+          for (let i = 0; i < count; i++) {
+            const x = Phaser.Math.Between(25, this.gameWidth - 25);
+
+            // Choose enemy type based on wave
+            let enemyType = "enemy1";
+            if (this.enemyWave > 3)
+              enemyType = Phaser.Utils.Array.GetRandom(["enemy1", "enemy2"]);
+            if (this.enemyWave > 6)
+              enemyType = Phaser.Utils.Array.GetRandom([
+                "enemy1",
+                "enemy2",
+                "enemy3",
+                "enemy4",
+              ]);
+            if (this.enemyWave > 11)
+              enemyType = Phaser.Utils.Array.GetRandom([
+                "enemy1",
+                "enemy2",
+                "enemy3",
+                "enemy4",
+                "enemy5",
+              ]);
+            if (this.enemyWave > 20)
+              enemyType = Phaser.Utils.Array.GetRandom([
+                "enemy1",
+                "enemy2",
+                "enemy3",
+                "enemy4",
+                "enemy5",
+                "enemy6",
+              ]);
+            if (this.enemyWave > 30)
+              enemyType = Phaser.Utils.Array.GetRandom([
+                "enemy1",
+                "enemy2",
+                "enemy3",
+                "enemy4",
+                "enemy5",
+                "enemy6",
+                "enemy7",
+              ]);
+            if (this.enemyWave > 40)
+              enemyType = Phaser.Utils.Array.GetRandom([
+                "enemy1",
+                "enemy2",
+                "enemy3",
+                "enemy4",
+                "enemy5",
+                "enemy6",
+                "enemy7",
+                "enemy8",
+              ]);
+
+            // Enhanced enemy stats
+            const ENEMY_BASE_HP = {
+              enemy1: 1,
+              enemy2: 1,
+              enemy3: 2,
+              enemy4: 2,
+              enemy5: 3,
+              enemy6: 3,
+              enemy7: 4,
+              enemy8: 5,
+            };
+
+            /* ---------------------------------------------------------- */
+            /* inside spawnWave() …                                       */
+
+            const enemy = this.add.sprite(x, -30, enemyType);
+            enemy.play(`${enemyType}-fly`);
+
+            // 2.  health in one readable line
+            const baseHealth = ENEMY_BASE_HP[enemyType] || 1; // fallback 1
+            enemy.health = baseHealth + Math.floor(this.enemyWave / 5);
+            enemy.maxHealth = enemy.health;
+            enemy.type = enemyType;
+
+            // Movement patterns
+            // slowed growth of enemy speed to make early/mid game easier and longer
+            enemy.speed = Phaser.Math.FloatBetween(
+              0.6,
+              1.1 + this.enemyWave * 0.02
+            );
+            enemy.directionX = Phaser.Math.FloatBetween(-0.4, 0.4);
+            enemy.pattern = Phaser.Utils.Array.GetRandom([
+              "straight",
+              "wave",
+              "spiral",
+            ]);
+            enemy.patternTimer = 0;
+
+            // Visual enhancements
+            enemy.originalScale = enemy.scaleX;
+            this.tweens.add({
+              targets: enemy,
+              scaleX: enemy.originalScale * 1.1,
+              scaleY: enemy.originalScale * 1.1,
+              duration: 1000,
+              yoyo: true,
+              repeat: -1,
+            });
+
+            this.enemies.add(enemy);
+          }
+        }
+
+        spawnBoss() {
+          if (this.bossActive) return;
+          this.bossActive = true;
+
+          const x = this.gameWidth / 2;
+          const boss = this.add.sprite(x, -80, "boss");
+          boss.play("bosswalk");
+          boss.setDepth(5);
+
+          // Increase base HP to make boss sturdier
+          boss.health = 20 + Math.floor(this.enemyWave * 0.5);
+          boss.maxHealth = boss.health;
+
+          // Behavior properties for rush/retreat pattern
+          boss.speed = 1.2;
+          boss.patternTimer = 0;
+          boss.directionX = 0.6;
+          boss.isBoss = true;
+
+          // New state machine: patrol -> telegraph -> charge -> retreat
+          boss.state = "patrol";
+          boss.stateTimer = 0;
+          boss.nextActionDelay = Phaser.Math.Between(1200, 2400); // ms before telegraph
+          boss.chargeSpeed = 6 + Math.min(6, Math.floor(this.enemyWave / 3)); // fast rush
+          boss.retreatSpeed = Math.max(1.5, boss.chargeSpeed * 0.2);
+          boss.chargeTarget = { x: boss.x, y: boss.y };
+          boss.telegraphDuration = 400; // ms to telegraph
+          boss.postChargeCooldown = 600; // ms before next action
+
+          // Boss intro tween
+          this.tweens.add({
+            targets: boss,
+            y: 100,
+            duration: 800,
+            ease: "Back.easeOut",
+          });
+
+          // Health bar graphics container
+          boss.healthBarGraphics = this.add.graphics().setDepth(6);
+          this.sound.play("bossspawnsound", {
+            volume: 0.6,
+            detune: Phaser.Math.Between(-70, 70),
+          });
+          this.bosses.add(boss);
+        }
+
+        updateBosses(delta) {
+          this.bosses.children.entries.forEach((boss) => {
+            if (!boss.active) return;
+
+            boss.patternTimer += delta;
+            boss.stateTimer += delta;
+
+            // Horizontal simple patrol while in patrol state
+            if (boss.state === "patrol") {
+              boss.x += Math.sin(boss.patternTimer * 0.002) * boss.directionX;
+              boss.x = Phaser.Math.Clamp(boss.x, 30, this.gameWidth - 30);
+
+              // gentle settling near top
+              if (boss.y < 90) {
+                boss.y += boss.speed * 0.4;
+              }
+
+              // decide to telegraph -> charge
+              if (boss.stateTimer >= boss.nextActionDelay) {
+                boss.state = "telegraph";
+                boss.stateTimer = 0;
+
+                // lock in the target (player position at telegraph start)
+                boss.chargeTarget.x = Phaser.Math.Clamp(
+                  this.player.x,
+                  30,
+                  this.gameWidth - 30
+                );
+                boss.chargeTarget.y = Math.max(
+                  this.player.y - 10,
+                  this.gameHeight * 0.35
+                ); // aim slightly above player
+                // visual telegraph: flash tint and small pulse
+                boss.setTint(0xffcc00);
+                this.tweens.add({
+                  targets: boss,
+                  scaleX: boss.scaleX * 1.08,
+                  scaleY: boss.scaleY * 1.08,
+                  duration: boss.telegraphDuration,
+                  yoyo: true,
+                  repeat: 0,
+                  onComplete: () => {
+                    if (boss.active && boss.state === "telegraph") {
+                      boss.clearTint();
+                    }
+                  },
+                });
+              }
+            }
+            // Telegraphed - short pause showing intent
+            else if (boss.state === "telegraph") {
+              // maintain slight hover
+              boss.x +=
+                Math.sin(boss.patternTimer * 0.002) * boss.directionX * 0.2;
+              boss.x = Phaser.Math.Clamp(boss.x, 30, this.gameWidth - 30);
+              boss.play("bossattacking");
+              if (boss.stateTimer >= boss.telegraphDuration) {
+                boss.state = "charge";
+                boss.stateTimer = 0;
+                // prepare velocity vector toward chargeTarget
+                const dx = boss.chargeTarget.x - boss.x;
+                const dy = boss.chargeTarget.y - boss.y;
+                const len = Math.max(1, Math.sqrt(dx * dx + dy * dy));
+                boss.velX = (dx / len) * boss.chargeSpeed;
+                boss.velY = (dy / len) * boss.chargeSpeed;
+                // camera cue
+                this.cameras.main.shake(200, 0.02);
+                this.sound.play("bossattacksound", {
+                  volume: 0.5,
+                  detune: Phaser.Math.Between(-70, 70),
+                });
+              }
+            }
+            // Charging towards the locked-in target (rush)
+            else if (boss.state === "charge") {
+              // Move boss by velocity
+              boss.x += boss.velX;
+              boss.y += boss.velY;
+              boss.play("bossattacking");
+              // Slight homing for last moment (small adjustment) so player can't fully dodge by moving a pixel
+              const adjustX =
+                Phaser.Math.Clamp(this.player.x - boss.x, -20, 20) * 0.02;
+              boss.x += adjustX;
+
+              // clamp horizontally to screen
+              boss.x = Phaser.Math.Clamp(boss.x, 20, this.gameWidth - 20);
+
+              // If boss reaches near target or passes lower threshold, switch to retreat
+              const toPlayerDist = Phaser.Math.Distance.Between(
+                boss.x,
+                boss.y,
+                boss.chargeTarget.x,
+                boss.chargeTarget.y
+              );
+              if (boss.y > this.gameHeight - 40) {
+                boss.state = "retreat";
+                boss.stateTimer = 0;
+                // set retreat target back to top area
+                boss.retreatTargetY = 100;
+
+                // give a short camera shake on impact moment
+                this.cameras.main.shake(180, 0.03);
+                // small explosion effect on the charge end for intimidation
+                this.createHitEffect(boss.x, boss.y);
+              }
+            }
+            // Retreat back to top, then resume patrol and become slightly more aggressive
+            else if (boss.state === "retreat") {
+              // move up toward retreatTargetY
+              const dy = boss.retreatTargetY - boss.y;
+              const stepY =
+                Math.sign(dy) * boss.retreatSpeed * (delta / 16.6667);
+              boss.y += stepY;
+
+              // slowly center horizontally while retreating
+              const centerX = this.gameWidth / 2;
+              boss.x = Phaser.Math.Linear(boss.x, centerX, 0.02);
+
+              if (boss.y <= boss.retreatTargetY + 6) {
+                // reset to patrol with slightly faster charge next time
+                boss.state = "patrol";
+                boss.stateTimer = 0;
+                boss.nextActionDelay = Phaser.Math.Between(900, 2000); // shorter delay for more aggression
+                boss.chargeSpeed = Math.min(12, boss.chargeSpeed + 0.4); // ramp up over time
+                boss.retreatSpeed = Math.max(2, boss.chargeSpeed * 0.45);
+                this.sound.play("bossretreatsound", {
+                  volume: 0.6,
+                  detune: Phaser.Math.Between(-70, 70),
+                });
+              }
+            }
+
+            // Update health bar
+            if (boss.healthBarGraphics) {
+              boss.healthBarGraphics.clear();
+              const barW = 140;
+              const barH = 10;
+              const bx = boss.x - barW / 2;
+              const by = boss.y - 50;
+              // background
+              boss.healthBarGraphics.fillStyle(0x000000, 0.6);
+              boss.healthBarGraphics.fillRect(
+                bx - 2,
+                by - 2,
+                barW + 4,
+                barH + 4
+              );
+              // health
+              const pct = Phaser.Math.Clamp(boss.health / boss.maxHealth, 0, 1);
+              const color =
+                pct > 0.5 ? 0x00ff00 : pct > 0.25 ? 0xffff00 : 0xff0000;
+              boss.healthBarGraphics.fillStyle(color, 1);
+              boss.healthBarGraphics.fillRect(bx, by, barW * pct, barH);
+            }
+
+            // If boss falls off bottom, remove
+            if (boss.y > this.gameHeight + 80) {
+              if (boss.healthBarGraphics) boss.healthBarGraphics.destroy();
+              boss.destroy();
+              this.bossActive = false;
+            }
+
+            // Player collision
+            const distance = Phaser.Math.Distance.Between(
+              boss.x,
+              boss.y,
+              this.player.x,
+              this.player.y
+            );
+            if (distance < 40) {
+              this._triggerGameOver();
+            }
+          });
+        }
+
+        spawnGate() {
+          // Create two gates at once (left and right) so player must choose.
+          const gateWidth = this.gameWidth / 2;
+          const leftX = gateWidth / 2;
+          const rightX = gateWidth + gateWidth / 2;
+
+          // When firepower is very high, avoid granting more positive large boosts.
+          let effects;
+          if (this.firepower >= this.maxFirepower) {
+            effects = [
+              { text: "-1", type: "bad", color: "gate_bad" },
+              { text: "5 - 6", type: "bad", color: "gate_bad" },
+              { text: "-2", type: "bad", color: "gate_bad" },
+              { text: "11 - 13", type: "bad", color: "gate_bad" },
+              { text: "-3", type: "bad", color: "gate_bad" },
+              { text: "(5-6) * 3", type: "bad", color: "gate_bad" },
+              { text: "/2", type: "divide", color: "gate_bad" },
+            ];
+          } else if (this.firepower >= this.maxFirepower / 2) {
+            effects = [
+              { text: "2 + 1 - 2", type: "good", color: "gate_good" },
+              { text: "1 + 1", type: "good", color: "gate_good" },
+              { text: "2 - 3", type: "bad", color: "gate_bad" },
+              { text: "5 - 7", type: "bad", color: "gate_bad" },
+              { text: "×2", type: "multiply", color: "gate_multiply" },
+              { text: "/2", type: "divide", color: "gate_bad" },
+              { text: "/3", type: "divide", color: "gate_bad" },
+              { text: "MEGA", type: "special", color: "gate_multiply" },
+            ];
+          } else {
+            effects = [
+              { text: "+1", type: "good", color: "gate_good" },
+              { text: "+2", type: "good", color: "gate_good" },
+              { text: "-1", type: "bad", color: "gate_bad" },
+              { text: "-2", type: "bad", color: "gate_bad" },
+              { text: "×2", type: "multiply", color: "gate_multiply" },
+              { text: "/2", type: "divide", color: "gate_bad" },
+              { text: "/3", type: "divide", color: "gate_bad" },
+              { text: "MEGA", type: "special", color: "gate_multiply" },
+            ];
+          }
+
+          // Pick two effects (try to diversify)
+          const first = Phaser.Utils.Array.GetRandom(effects);
+          let second = Phaser.Utils.Array.GetRandom(effects);
+          if (second.text === first.text) {
+            const alt = Phaser.Utils.Array.GetRandom(effects);
+            if (alt.text !== first.text) second = alt;
+          }
+
+          const pair = [
+            { x: leftX, effect: first },
+            { x: rightX, effect: second },
+          ];
+
+          pair.forEach((p) => {
+            const effect = p.effect;
+            const gate = this.add.sprite(p.x, -30, effect.color);
+            gate.effect = effect.text;
+            gate.effectType = effect.type;
+            gate.applied = false;
+            gate.setDisplaySize(gateWidth, 40);
+
+            // Pulsing effect
+            this.tweens.add({
+              targets: gate,
+              scaleY: gate.scaleY * 1.1,
+              duration: 800,
+              yoyo: true,
+              repeat: -1,
+            });
+
+            const label = this.add
+              .text(gate.x, gate.y, gate.effect, {
+                fontSize: effect.text === "MEGA" ? "20px" : "28px",
+                fontFamily: '"Bebas Neue"',
+                fill: "#FFFFFF",
+                fontWeight: "bold",
+                stroke: "#000000",
+                strokeThickness: 3,
+              })
+              .setOrigin(0.5);
+
+            gate.label = label;
+            this.gates.add(gate);
+          });
+        }
+
+        spawnPowerup() {
+          const x = Phaser.Math.Between(50, this.gameWidth - 50);
+          const powerup = this.add.sprite(x, -20, "powerup");
+          powerup.applied = false;
+
+          this.tweens.add({
+            targets: powerup,
+            alpha: { from: 0.7, to: 1 },
+            scale: { from: 0.8, to: 1 },
+            duration: 1000,
+            yoyo: true,
+            repeat: -1,
+          });
+
+          this.powerups.add(powerup);
+        }
+
+        updatePowerups() {
+          this.powerups.children.entries.forEach((powerup) => {
+            if (!powerup.active) return;
+
+            powerup.y += 2;
+            if (powerup.y > this.gameHeight + 30) {
+              powerup.destroy();
+              return;
+            }
+
+            // Collision with player
+            const distance = Phaser.Math.Distance.Between(
+              powerup.x,
+              powerup.y,
+              this.player.x,
+              this.player.y
+            );
+            if (distance < 25 && !powerup.applied) {
+              this.collectPowerup(powerup);
+            }
+          });
+        }
+
+        collectPowerup(powerup) {
+          powerup.applied = true;
+
+          // Activate special mode
+          this.specialMode = true;
+          this.specialModeTimer = 5000; // 5 seconds
+          // Use tint overlay instead of camera.setTint
+          this.setCameraTint(0xff8800, 0.12);
+          this.autoShootTimer.delay = 100; // Faster shooting
+
+          // Visual feedback
+          this.createPowerupExplosion(powerup.x, powerup.y);
+          this.cameras.main.shake(150, 0.015);
+
+          this.sound.play("pickupspeedsound", { volume: 0.5 });
+          this.sound.play("justwhatineed", { volume: 1 });
+          // Show effect text
+          const fx = this.add
+            .text(this.player.x, this.player.y - 60, "SPEED MODE!", {
+              fontSize: "32px",
+              fontFamily: '"Bebas Neue"',
+              fill: "#FF8800",
+              fontWeight: "bold",
+              stroke: "#000000",
+              strokeThickness: 4,
+            })
+            .setOrigin(0.5);
+
+          this.tweens.add({
+            targets: fx,
+            y: fx.y - 80,
+            alpha: 0,
+            scale: 1.5,
+            duration: 1500,
+            ease: "Power2",
+            onComplete: () => fx.destroy(),
+          });
+
+          powerup.destroy();
+
+          // Haptic feedback
+          if (window.FarcadeSDK?.singlePlayer?.actions?.hapticFeedback) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+        }
+
+        createPowerupExplosion(x, y) {
+          const colors = ["spark", "fire", "ice"];
+          colors.forEach((color) => {
+            const particles = this.add.particles(x, y, color, {
+              speed: { min: 100, max: 200 },
+              scale: { start: 1, end: 0 },
+              alpha: { start: 1, end: 0 },
+              lifespan: 600,
+              quantity: 8,
+            });
+
+            this.time.delayedCall(600, () => particles.destroy());
+          });
+        }
+
+        updateGates() {
+          this.gates.children.entries.forEach((gate) => {
+            if (!gate.active) return;
+
+            gate.y += 2.5;
+            if (gate.label) gate.label.y = gate.y;
+
+            if (gate.y > this.gameHeight + 40) {
+              if (gate.label) gate.label.destroy();
+              gate.destroy();
+              return;
+            }
+
+            // Collision detection
+            if (
+              !gate.applied &&
+              this.player.x + 16 > gate.x - gate.displayWidth / 2 &&
+              this.player.x - 16 < gate.x + gate.displayWidth / 2 &&
+              Math.abs(this.player.y - gate.y) < 25
+            ) {
+              this.applyGateEffect(gate);
+            }
+          });
+        }
+
+        applyGateEffect(gate) {
+          if (this._ended) return;
+
+          gate.applied = true;
+          let multiplier = 1;
+
+          switch (gate.effect) {
+            case "+1":
+              this.firepower += 1;
+              this.sound.play("powerupsound", { volume: 0.3 });
+              break;
+            case "2 + 1 - 2":
+              this.firepower += 1;
+              this.sound.play("powerupsound", { volume: 0.3 });
+              break;
+            case "+2":
+              this.firepower += 2;
+              this.firepower = Math.min(this.firepower, this.maxFirepower);
+              this.sound.play("powerupsound", { volume: 0.3 });
+              break;
+            case "1 + 1":
+              this.firepower += 2;
+              this.firepower = Math.min(this.firepower, this.maxFirepower);
+              this.sound.play("powerupsound", { volume: 0.3 });
+              break;
+            case "-1":
+              this.firepower = Math.max(0.5, this.firepower - 1);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "2 - 3":
+              this.firepower = Math.max(0.5, this.firepower - 1);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "5 - 6":
+              this.firepower = Math.max(0.5, this.firepower - 1);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "-2":
+              this.firepower = Math.max(0.5, this.firepower - 2);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "5 - 7":
+              this.firepower = Math.max(0.5, this.firepower - 2);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "11 - 13":
+              this.firepower = Math.max(0.5, this.firepower - 2);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+
+            case "-3":
+              this.firepower = Math.max(0.5, this.firepower - 3);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "(5-6) * 3":
+              this.firepower = Math.max(0.5, this.firepower - 3);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "×2":
+              this.firepower *= 2;
+              this.firepower = Math.min(this.firepower, this.maxFirepower); // Cap at 10
+              multiplier = 2;
+              this.sound.play("powerupsound", { volume: 0.3 });
+              break;
+            case "/2":
+              this.firepower = Math.max(0.5, this.firepower / 2);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "/3":
+              this.firepower = Math.max(0.5, this.firepower / 3);
+              multiplier = -1;
+              this.sound.play("powerdownsound", { volume: 0.3 });
+              break;
+            case "MEGA":
+              this.firepower += 5;
+              this.firepower = Math.min(this.firepower, this.maxFirepower);
+              multiplier = 3;
+              this.sound.play("powerupsound", { volume: 0.3 });
+              break;
+          }
+
+          // Destroy gate elements
+          if (gate.label) gate.label.destroy();
+          gate.destroy();
+
+          // Update firepower display
+          this.firepowerText.setText(
+            `POWER: ${
+              this.firepower === this.maxFirepower
+                ? "MAX"
+                : this.firepower === 0.5
+                ? "MIN"
+                : this.firepower.toFixed(1) + "x"
+            }`
+          );
+
+          // Show effect text
+          const color = multiplier > 0 ? "#00FF00" : "#FF0000";
+          const fx = this.add
+            .text(this.player.x, this.player.y - 50, gate.effect, {
+              fontSize: "36px",
+              fontFamily: '"Bebas Neue"',
+              fill: color,
+              fontWeight: "bold",
+              stroke: "#000000",
+              strokeThickness: 4,
+            })
+            .setOrigin(0.5);
+
+          this.tweens.add({
+            targets: fx,
+            y: fx.y - 60,
+            alpha: 0,
+            scale: { from: 1, to: 1.5 },
+            duration: 1000,
+            ease: "Power1",
+            onComplete: () => fx.destroy(),
+          });
+
+          // Haptic feedback
+          if (window.FarcadeSDK?.singlePlayer?.actions?.hapticFeedback) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+        }
+
+        createGateExplosion(x, y, isGood) {
+          const particleType = isGood ? "spark" : "fire";
+          const particles = this.add.particles(x, y, particleType, {
+            speed: { min: 80, max: 160 },
+            scale: { start: 0.8, end: 0 },
+            alpha: { start: 1, end: 0 },
+            lifespan: 800,
+            quantity: 12,
+          });
+
+          this.time.delayedCall(800, () => particles.destroy());
+        }
+
+        updateEnemies(delta) {
+          this.enemies.children.entries.forEach((enemy) => {
+            if (!enemy.active) return;
+
+            // Enhanced movement patterns
+            enemy.patternTimer += delta;
+
+            switch (enemy.pattern) {
+              case "wave":
+                enemy.directionX = Math.sin(enemy.patternTimer * 0.003) * 0.5;
+                break;
+              case "spiral":
+                const spiralRadius = 30;
+                enemy.x += Math.cos(enemy.patternTimer * 0.005) * 0.3;
+                break;
+              case "straight":
+              default:
+                enemy.directionX += Phaser.Math.FloatBetween(-0.02, 0.02);
+                break;
+            }
+
+            // Apply movement
+            enemy.y += enemy.speed;
+            enemy.directionX = Phaser.Math.Clamp(enemy.directionX, -0.6, 0.6);
+            enemy.x += enemy.directionX;
+            enemy.x = Phaser.Math.Clamp(enemy.x, 15, this.gameWidth - 15);
+
+            // Health-based visual feedback
+            if (enemy.health < enemy.maxHealth) {
+              enemy.setTint(0xff8888);
+            }
+
+            // Remove off-screen enemies
+            if (enemy.y > this.gameHeight + 30) {
+              enemy.destroy();
+              return;
+            }
+
+            // Player collision
+            const distance = Phaser.Math.Distance.Between(
+              enemy.x,
+              enemy.y,
+              this.player.x,
+              this.player.y
+            );
+            if (distance < 30) {
+              this._triggerGameOver();
+            }
+          });
+        }
+
+        updateBullets() {
+          this.bullets.children.entries.forEach((bullet) => {
+            if (!bullet.active) return;
+
+            bullet.x += bullet.velX;
+            bullet.y += bullet.velY;
+
+            // Remove off-screen bullets
+            if (
+              bullet.y < -20 ||
+              bullet.x < -10 ||
+              bullet.x > this.gameWidth + 10
+            ) {
+              if (bullet.trail) bullet.trail.destroy();
+              bullet.destroy();
+            }
+          });
+        }
+
+        checkCollisions() {
+          this.bullets.children.entries.forEach((bullet) => {
+            if (!bullet.active) return;
+
+            // enemy collisions
+            this.enemies.children.entries.forEach((enemy) => {
+              if (!enemy.active) return;
+
+              const distance = Phaser.Math.Distance.Between(
+                bullet.x,
+                bullet.y,
+                enemy.x,
+                enemy.y
+              );
+              if (distance < 18) {
+                this.hitEnemy(bullet, enemy);
+              }
+            });
+
+            // boss collisions
+            this.bosses.children.entries.forEach((boss) => {
+              if (!boss.active) return;
+
+              const distance = Phaser.Math.Distance.Between(
+                bullet.x,
+                bullet.y,
+                boss.x,
+                boss.y
+              );
+              if (distance < 30) {
+                // destroy bullet
+                if (bullet.trail) bullet.trail.destroy();
+                bullet.destroy();
+
+                boss.health -= bullet.damage || 1;
+                if (boss.health <= 0) {
+                  // boss defeated
+                  if (boss.healthBarGraphics) boss.healthBarGraphics.destroy();
+                  const bx = boss.x;
+                  const by = boss.y;
+                  boss.destroy();
+                  this.sound.play("bossdeathsound", {
+                    volume: 0.6,
+                    detune: Phaser.Math.Between(-70, 70),
+                  });
+                  this.bossActive = false;
+                  this.sound.play("letsgo", { volume: 1 });
+
+                  // reward
+                  this.score += this.enemyWave * 100;
+                  this.cameras.main.shake(400, 0.04);
+                  // big explosion
+                  this.createExplosion(bx, by, "enemy3");
+                  this.maxFirepower += 1;
+                  // Ensure next wave waits until boss cleared logic handled and then starts:
+                  this.onBossCleared();
+                } else {
+                  // hit feedback
+                  this.createHitEffect(boss.x, boss.y);
+                  this.cameras.main.shake(60, 0.01);
+                }
+              }
+            });
+          });
+        }
+
+        hitEnemy(bullet, enemy) {
+          if (!bullet.active || !enemy.active) return;
+
+          // Destroy bullet and trail
+          if (bullet.trail) bullet.trail.destroy();
+          bullet.destroy();
+
+          enemy.health -= bullet.damage;
+
+          if (enemy.health <= 0) {
+            // Enemy destroyed
+            enemy.destroy();
+            this.enemiesKilled++;
+            this.combo++;
+            this.maxCombo = Math.max(this.maxCombo, this.combo);
+            const zombieHitSounds = [
+              "zombiehit1",
+              "zombiehit2",
+              "zombiehit3",
+              "zombiehit4",
+            ];
+
+            // Select a random sound effect
+            const randomSound =
+              zombieHitSounds[
+                Math.floor(Math.random() * zombieHitSounds.length)
+              ];
+
+            // Play the selected sound effect
+            this.sound.play(randomSound, {
+              volume: 0.6,
+              detune: Phaser.Math.Between(-70, 70),
+            });
+            // Reset combo timer whenever a kill happens
+            this.comboTimer = 2000;
+
+            // Score calculation with combo multiplier
+            const baseScore =
+              enemy.type === "enemy1" ? 10 : enemy.type === "enemy2" ? 20 : 30;
+            const comboBonus = Math.floor(this.combo / 5);
+            this.score += baseScore + comboBonus;
+
+            // Update HUD immediately
+            if (this.scoreText) this.scoreText.setText(`SCORE: ${this.score}`);
+            if (this.comboText) this.comboText.setText(`COMBO: ${this.combo}`);
+            if (this.waveText) this.waveText.setText(`WAVE: ${this.enemyWave}`);
+
+            this.createExplosion(enemy.x, enemy.y, enemy.type);
+            this.showScorePopup(enemy.x, enemy.y, baseScore + comboBonus);
+
+            // Screen shake intensity based on enemy type
+            const shakeIntensity = enemy.type === "enemy3" ? 0.02 : 0.01;
+            this.cameras.main.shake(100, shakeIntensity);
+
+            // Haptic feedback
+            if (window.FarcadeSDK?.singlePlayer?.actions?.hapticFeedback) {
+              try {
+                window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+              } catch (e) {}
+            }
+          } else {
+            // Enemy hit but not destroyed
+            this.createHitEffect(enemy.x, enemy.y);
+
+            // Flash enemy
+            this.tweens.add({
+              targets: enemy,
+              alpha: 0.5,
+              duration: 100,
+              yoyo: true,
+              onComplete: () => {
+                if (enemy.active) enemy.alpha = 1;
+              },
+            });
+          }
+        }
+
+        showScorePopup(x, y, points) {
+          const color =
+            points > 20 ? "#FFD700" : points > 10 ? "#FF8800" : "#FFFFFF";
+          const popup = this.add
+            .text(x, y, `+${points}`, {
+              fontSize: "20px",
+              fontFamily: '"Bebas Neue"',
+              fill: color,
+              fontWeight: "bold",
+              stroke: "#000000",
+              strokeThickness: 2,
+            })
+            .setOrigin(0.5);
+
+          this.tweens.add({
+            targets: popup,
+            y: popup.y - 40,
+            alpha: 0,
+            duration: 800,
+            ease: "Power1",
+            onComplete: () => popup.destroy(),
+          });
+        }
+
+        createExplosion(x, y, enemyType) {
+          const particleCount =
+            enemyType === "enemy3" ? 15 : enemyType === "enemy2" ? 10 : 8;
+          const particleTypes = ["spark", "fire"];
+
+          particleTypes.forEach((type) => {
+            const particles = this.add.particles(x, y, type, {
+              speed: { min: 60, max: 140 },
+              scale: { start: 0.6, end: 0 },
+              alpha: { start: 1, end: 0 },
+              lifespan: 500,
+              quantity: particleCount / 2,
+            });
+
+            this.time.delayedCall(500, () => particles.destroy());
+          });
+
+          // Ring explosion for bigger enemies
+          if (enemyType !== "enemy1") {
+            const ring = this.add.circle(x, y, 5, 0xffffff, 0);
+            ring.setStrokeStyle(3, 0xffff00);
+
+            this.tweens.add({
+              targets: ring,
+              radius: 30,
+              alpha: 0,
+              duration: 300,
+              onComplete: () => ring.destroy(),
+            });
+          }
+        }
+
+        createHitEffect(x, y) {
+          const hit = this.add.particles(x, y, "spark", {
+            speed: { min: 30, max: 80 },
+            scale: { start: 0.3, end: 0 },
+            alpha: { start: 0.8, end: 0 },
+            lifespan: 200,
+            quantity: 3,
+          });
+
+          this.time.delayedCall(200, () => hit.destroy());
+        }
+
+        _triggerGameOver() {
+          if (this._ended) return;
+          this.sound.stopAll();
+          this._ended = true;
+          this.sound.play("bossdeathsound", { volume: 0.7 });
+          this.sound.play("tryagain", { volume: 1 });
+
+          this.combo = 0;
+
+          // Stop all timers and effects
+          this.time.removeAllEvents();
+          this.tweens.killAll();
+
+          // Dramatic screen effect
+          this.cameras.main.shake(500, 0.05);
+          this.cameras.main.flash(200, 255, 0, 0, false);
+
+          // Destroy player trail
+          if (this.playerTrail) this.playerTrail.destroy();
+
+          // Final score calculation
+          const finalScore = this.score + this.maxCombo * 5;
+
+          // Instead of creating a custom game-over UI, report to Farcade SDK (requirement).
+          if (window.FarcadeSDK?.singlePlayer?.actions?.gameOver) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.gameOver({
+                score: finalScore,
+              });
+            } catch (e) {
+              console.warn("Farcade gameOver() failed", e);
+              // Fallback restart after a short delay
+              this.time.delayedCall(1200, () => this.scene.restart());
+            }
+          } else {
+            // Fallback restart
+            this.time.delayedCall(1200, () => this.scene.restart());
+          }
+
+          // Haptic feedback for game over
+          if (window.FarcadeSDK?.singlePlayer?.actions?.hapticFeedback) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+        }
+      }
+
+      // Game configuration with responsive RESIZE mode to match remix/embed container size
+      const config = {
+        type: Phaser.AUTO,
+        width: 400,
+        height: 600,
+        parent: "game-container",
+        backgroundColor: "#0a0520",
+        scene: [BootScene, LoadingScene, GameScene],
+        physics: {
+          default: "arcade",
+          arcade: {
+            gravity: { y: 0 },
+            debug: false,
+            fps: 60,
+          },
+        },
+        scale: {
+          mode: Phaser.Scale.RESIZE, // adapt to parent size (fixes remix)
+          autoCenter: Phaser.Scale.CENTER_BOTH,
+        },
+        render: {
+          pixelArt: true,
+          antialias: true,
+        },
+      };
+
+      const game = new Phaser.Game(config);
+
+      // Enhanced Farcade event handlers
+      if (window.FarcadeSDK?.on) {
+        try {
+          window.FarcadeSDK.on("play_again", function () {
+            try {
+              const scene = game.scene.keys["GameScene"];
+              if (scene) {
+                scene._ended = false;
+                scene.bossActive = false;
+
+                // destroy any remaining bosses to ensure clean restart
+                try {
+                  scene.bosses.children.entries.forEach((b) => {
+                    if (b && b.healthBarGraphics) b.healthBarGraphics.destroy();
+                    if (b) b.destroy();
+                  });
+                } catch (e) {}
+                scene.scene.restart();
+              } else {
+                game.scene.start("GameScene");
+              }
+            } catch (e) {
+              console.warn("play_again handler failed", e);
+            }
+          });
+        } catch (e) {
+          console.warn("FarcadeSDK.on(play_again) failed", e);
+        }
+
+        try {
+          window.FarcadeSDK.on("toggle_mute", function (payload) {
+            try {
+              window.__isMuted = !!payload?.isMuted;
+            } catch (e) {
+              window.__isMuted = false;
+            }
+          });
+        } catch (e) {
+          console.warn("FarcadeSDK.on(toggle_mute) failed", e);
+        }
+      }
+    </script>
+  </body>
+</html>

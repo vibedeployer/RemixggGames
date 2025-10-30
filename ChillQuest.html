@@ -1,0 +1,4607 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Penguin Battle Royale</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/3.70.0/phaser.min.js"></script>
+    <style>
+      @font-face {
+        font-family: "Fobble";
+        src: url("https://artificialisle.github.io/font/Fobble_regular-Regular%20(1)%20(1).otf")
+          format("opentype");
+      }
+    </style>
+    <style>
+      @font-face {
+        font-family: "Menco";
+        src: url("https://artificialisle.github.io/font/Kvant%20-%20Menco-Medium%20(2).otf")
+          format("opentype");
+      }
+    </style>
+
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="" rel="stylesheet" />
+
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        min-height: 100vh;
+
+        font-family: "Fobble", Arial, sans-serif;
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+      }
+      #game-container {
+        position: relative;
+        aspect-ratio: 2 / 3;
+        max-width: 500px;
+      }
+      .ui-overlay {
+        position: absolute;
+        top: 25px;
+        left: 0;
+        right: 0;
+        color: white;
+        font-size: 38px;
+        font-weight: bold;
+
+        z-index: 100;
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+      }
+      .score-container {
+        position: absolute;
+        top: 0;
+        left: 25px;
+        -webkit-text-stroke: 0.5px black;
+      }
+      .level-container {
+        position: absolute;
+        top: 0;
+        right: 25px;
+        -webkit-text-stroke: 0.5px black;
+      }
+      .controls {
+        position: absolute;
+        bottom: 20px;
+        left: 50%;
+        transform: translateX(-50%);
+        color: white;
+        text-align: center;
+        font-size: 12px;
+        text-shadow: 1px 1px 2px rgba(0, 0, 0, 0.8);
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+      }
+
+      /* Mobile Controls */
+      .mobile-controls {
+        position: absolute;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        height: 120px;
+        pointer-events: none;
+        z-index: 999;
+        display: none;
+      }
+
+      .mobile-controls.active {
+        display: block;
+      }
+
+      .mobile-button {
+        position: absolute;
+        width: 60px;
+        height: 60px;
+        background: rgba(255, 255, 255, 0.8);
+        border: 3px solid #000;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 24px;
+        font-weight: bold;
+        color: #000;
+        pointer-events: auto;
+        user-select: none;
+        -webkit-user-select: none;
+        -ms-user-select: none;
+        touch-action: manipulation;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+        transition: all 0.1s ease;
+      }
+
+      .mobile-button:active {
+        transform: scale(0.95);
+        background: rgba(200, 200, 200, 0.9);
+      }
+
+      .mobile-left {
+        bottom: 30px;
+        left: 20px;
+      }
+
+      .mobile-right {
+        bottom: 30px;
+        left: 95px;
+      }
+
+      .mobile-jump {
+        bottom: 35px;
+        right: 20px;
+        background: rgba(255, 215, 0, 0.8);
+      }
+
+      .mobile-jump:active {
+        background: rgba(255, 200, 0, 0.9);
+      }
+
+      .mobile-down {
+        bottom: 25px;
+        right: 90px;
+        background: rgba(0, 150, 255, 0.8);
+      }
+
+      .mobile-down:active {
+        background: rgba(0, 130, 255, 0.9);
+      }
+
+      /* Mobile controls are hidden by default, shown only when .active class is added */
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@0.2.1/dist/index.min.js"></script>
+  </head>
+  <body>
+    <div id="game-container">
+      <div class="ui-overlay" id="ui-overlay" style="display: none">
+        <div class="score-container">
+          <img
+            src="https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/coin-l1TjUucbxaYdkbzIludCB0H1Hx1Z1T.png?ec77"
+            alt="coin"
+            style="
+              width: 24px;
+              height: 24px;
+              vertical-align: middle;
+              margin-right: 5px;
+            "
+          />
+          <span id="score">0</span>
+          <img
+            src="https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/Untitled%205-Vjz2qLJQJPAsDJ5r1vTA8riVUrXUKo.png?BKq8"
+            alt="key"
+            style="
+              width: 24px;
+              height: 24px;
+              vertical-align: middle;
+              margin-left: 5px;
+              margin-right: 5px;
+            "
+          />
+          <span id="keys">0</span>
+        </div>
+        <div class="level-container">Level: <span id="level">1</span></div>
+      </div>
+
+      <!-- Mobile Controls -->
+      <div class="mobile-controls" id="mobile-controls">
+        <div class="mobile-button mobile-left" id="mobile-left">←</div>
+        <div class="mobile-button mobile-right" id="mobile-right">→</div>
+        <div class="mobile-button mobile-down" id="mobile-down">↓</div>
+        <div class="mobile-button mobile-jump" id="mobile-jump">↑</div>
+      </div>
+    </div>
+
+    <script>
+      // Game data management using Farcade SDK
+      class GameData {
+        constructor() {
+          this.unlockedCharacters = ["classic"];
+          this.currentCharacter = "classic";
+          this.highestLevel = 1;
+          this.totalScore = 0;
+          this.isMuted = false;
+          this.initialized = false;
+        }
+
+        async initialize(initialGameState) {
+          if (initialGameState) {
+            this.unlockedCharacters = initialGameState.unlockedCharacters || [
+              "classic",
+            ];
+            this.currentCharacter =
+              initialGameState.currentCharacter || "classic";
+            this.highestLevel = initialGameState.highestLevel || 1;
+            this.totalScore = initialGameState.totalScore || 0;
+          }
+          this.initialized = true;
+        }
+
+        getGameState() {
+          return {
+            unlockedCharacters: this.unlockedCharacters,
+            currentCharacter: this.currentCharacter,
+            highestLevel: this.highestLevel,
+            totalScore: this.totalScore,
+            isMuted: this.isMuted,
+          };
+        }
+
+        setGameState(gameState) {
+          if (gameState) {
+            this.unlockedCharacters = gameState.unlockedCharacters || [
+              "classic",
+            ];
+            this.currentCharacter = gameState.currentCharacter || "classic";
+            this.highestLevel = gameState.highestLevel || 1;
+            this.totalScore = gameState.totalScore || 0;
+          }
+        }
+
+        saveCurrentCharacter(character) {
+          this.currentCharacter = character;
+          this.saveGameState();
+        }
+
+        saveHighestLevel(level) {
+          if (level > this.highestLevel) {
+            this.highestLevel = level;
+            this.saveGameState();
+          }
+        }
+
+        saveTotalScore(score) {
+          this.totalScore = score;
+          this.saveGameState();
+        }
+
+        resetTotalScore() {
+          this.score = 0;
+          this.totalScore = 0;
+          this.saveGameState();
+        }
+
+        unlockCharacter(character) {
+          if (!this.unlockedCharacters.includes(character)) {
+            this.unlockedCharacters.push(character);
+            this.saveGameState();
+          }
+        }
+
+        saveGameState() {
+          if (this.initialized && window.FarcadeSDK) {
+            window.FarcadeSDK.singlePlayer.actions.saveGameState({
+              gameState: this.getGameState(),
+            });
+          }
+        }
+
+        toggleMute() {
+          this.isMuted = !this.isMuted;
+          this.saveGameState();
+          return this.isMuted;
+        }
+      }
+
+      // Global game data instance
+      const gameData = new GameData();
+
+      // Helper function to play sounds with mute checking
+      function playSound(scene, soundKey, options = {}) {
+        if (!gameData.isMuted && scene && scene.sound) {
+          scene.sound.play(soundKey, options);
+        }
+      }
+
+      class BootLoader extends Phaser.Scene {
+        constructor() {
+          super({ key: "BootLoader" });
+        }
+
+        preload() {
+          this.loadFontPromise = document.fonts.load('16px "Fobble"');
+          this.loadFontPromise = document.fonts.load('16px "Menco"');
+          // Create loading bar
+          this.createLoadingBar();
+
+          // Load all essential assets
+          this.load.spritesheet(
+            "pudgyPenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/All%20Characters-Character02-Walk_00-sheet-2gBZY6agvwcxyVW3JSV9Pee7RuOpkh.png?sWve",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "pudgyPenguinIdle",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/All%20Characters-Character02-Idle_00-sheet-04NSwTEtxlAL0zXCZFoVV6vyoPqVjW.png?axGy",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "piratePenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/All%20Characters-Character01-Walk_00-sheet-o2ZqUSwXHiDT2kJr3tzcacugrTb0ku.png?f4Gs",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "piratePenguinIdle",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/All%20Characters-Character01-Idle_00-sheet-qytyGj4bnCsYXxau1LJZboszP6ILWm.png?hlwf",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "ninjaPenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/ninjawalk-K2dpm9xU28lGQR01ILfPmb7cFi2VKq.png?Urt2",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "ninjaPenguinIdle",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/All%20Characters-Character013-Idle_00-sheet-QtADVOH77Gc7Hehvs9eVDwIaS2gBST.png?DwrI",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "aviatorPenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/aviatorwalk-y6tshS3osmGoDUfymjL948Mf5Fg1Ci.png?GInW",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "aviatorPenguinIdle",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/All%20Characters-Character04-Idle_00-sheet-cuSMeSj9uKRPg12d4uKZa4nDqOAW98.png?4Tqq",
+            { frameWidth: 96, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "vikingPenguin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/vikingwalk-VgLNuILiu3YZjhVYZCzfDAH0QaWuYl.png?fDG8",
+            { frameWidth: 128, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "vikingPenguinIdle",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/All%20Characters-Character08-Idle_00-sheet-x7VUqeyv8tjRnVkdJqBBfTZmPmiicg.png?yjqv",
+            { frameWidth: 128, frameHeight: 128 }
+          );
+
+          this.load.spritesheet(
+            "winner",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/giphy%20%283%29-7NPgCuEduO6YXBe9UEkJIUxdYqx5ye.png?X9I0",
+            { frameWidth: 250, frameHeight: 250 }
+          );
+
+          this.load.image(
+            "levelSelectCard",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/level%20select-export-Gn9pqh5s8PLtUuYiWNNKPc4La4tqLU.png?cM0r"
+          );
+
+          // Load background layer assets
+          this.load.image(
+            "sky",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/Untitled-uwHxhgVHTmCLPl5hKxxxXk6LeCup09.png?7cR5"
+          );
+
+          this.load.image(
+            "clouds",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/layer6-l8aFl8Xa4hoV8GGDdz06AGyPMLxhvb.png?iuXo"
+          );
+
+          this.load.image(
+            "fishgreen",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/FISH_GRN-01-atxf82EBLSaIEKGvyKQrja0VhQ3oBe.png?RjC9"
+          );
+
+          this.load.image(
+            "fishred",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/FISH-ORANGE-01-OS2HBzCcmUxppy5s1LNGYqMLdc1vi8.png?kwpb"
+          );
+
+          this.load.image(
+            "fishblue",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/FISH-BLU_DARK-01-RubJoh4zBi5TVoscJNbkBZxhnXslqs.png?Rj3R"
+          );
+
+          // Platformer assets
+          this.load.image(
+            "tile-left",
+            "https://raw.githubusercontent.com/yandeu/phaser3-typescript-platformer-example/refs/heads/master/src/assets/img/tile-left.png"
+          );
+          this.load.image(
+            "tile-middle",
+            "https://raw.githubusercontent.com/yandeu/phaser3-typescript-platformer-example/refs/heads/master/src/assets/img/tile-middle.png"
+          );
+          this.load.image(
+            "tile-right",
+            "https://raw.githubusercontent.com/yandeu/phaser3-typescript-platformer-example/refs/heads/master/src/assets/img/tile-right.png"
+          );
+          this.load.image(
+            "goal",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/PP%20YT_COMP%20title%20card_V2-1-835nlUj2Y3a8zVYaIjsmc7xCJtC5Xj.png?hyn0"
+          );
+
+          this.load.spritesheet(
+            "coin",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/coin-sheet-WeRQgKs27cIZoon1sYEqZ3csHJqDD0.png?Ehg1",
+            { frameHeight: 42, frameWidth: 42 }
+          );
+          this.load.spritesheet(
+            "key",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/key-SMx1KEOoTl8P4xiag6GDuZAag18QmL.png?u9Qe",
+            { frameHeight: 176, frameWidth: 176 }
+          );
+          this.load.spritesheet(
+            "bee",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/skeleton-Fly_0-sheet-JBYi3byJsR49v2lG8sMg7W3LVsRSND.png?wS8W",
+            { frameHeight: 131, frameWidth: 92 }
+          );
+          this.load.spritesheet(
+            "slime",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/Walk_00-sheet-vU8LmvjQtdM9w5zbSwqELmM5sTImmd.png?JeMk",
+            { frameHeight: 96, frameWidth: 96 }
+          );
+
+          this.load.audio(
+            "HudMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/HUB-mXTbNUbqzb5gWRXQixhoJCx3gCNskw.mp3?Jf4N"
+          );
+          this.load.audio(
+            "PirateMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/PIRATE-OVga5qNDf0jFU0ll98KRRoRe7WCnaz.mp3?wVdy"
+          );
+          this.load.audio(
+            "AviatorMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/BETTERAIR-UDhYiKzLM0maCu1tAGfyIpJ8HwVkxf.mp3?JMKC"
+          );
+          this.load.audio(
+            "VikingMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/VIKING-e3dIhSnwhHU4R2lLQ0hCPJdvkG0O9O.mp3?kq69"
+          );
+          this.load.audio(
+            "NinjaMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/NINJA-6yzBt9iHupcThX2dsq0bFyUbhWC36M.mp3?vQpG"
+          );
+          this.load.audio(
+            "VictoryMusic",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/victoru-WSZ1VqkBVohS1gFFfyFgdjpn3ObBST.mp3?5YwA"
+          );
+
+          this.load.audio(
+            "ClickFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/minimal-pop-click-ui-1-198301-UDXG34BcgCKKjEUHcx0hQqyHaSoUws.mp3?0BoM"
+          );
+
+          this.load.audio(
+            "StartGameFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/startgame-NjLdJEPwo07eV6hFAi8mkVzOoTABgL.mp3?6ZNH"
+          );
+          this.load.audio(
+            "HitFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/hit-zjSAbNHwMeQd6uSXHJMtVEKeBVONgX.mp3?0JMD"
+          );
+          this.load.audio(
+            "SplashFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/splash-xrNkkUsx6O3glcF05zpigM2qLydGwE.mp3?GdPo"
+          );
+
+          this.load.audio(
+            "FailFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/fail-AsvGZIaKqkpNQy9fS3GAIIlxQkoJ00.mp3?my16"
+          );
+
+          this.load.audio(
+            "PowerupFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/video-game-power-up-sound-effect-384657-JYy2onDAbZnyejheZrSFJlrAAK4F7S.mp3?HBC7"
+          );
+          this.load.audio(
+            "WooshFx",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/9375757a-c977-4071-afba-9a1bf45d098d/whoosh-breeze-389366-mCWflcqxspQN3RRs1AaPYIrnbZMPS5.mp3?FwPk"
+          );
+
+          this.load.image(
+            "gamebackground1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/Layer1-IBDQTfRHshweWOPsDj2UPgCxj5IH6J.png?AqX6"
+          );
+          this.load.image(
+            "gameparralaxbackground1",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/d677a658-52fc-490b-8e25-a8e8e6049a7e/Layer2-aw7n4jLa8z9gQyX9hWtS4Mxc8oDQDP.png?13Rp"
+          );
+
+          // Load progress events
+          this.load.on("progress", this.updateLoadingBar, this);
+          this.load.on("complete", this.onLoadComplete, this);
+        }
+
+        createLoadingBar() {
+          this.cameras.main.fadeIn(500, 0, 0, 0);
+          this.cameras.main.setBackgroundColor(0x477dfd);
+
+          // Loading text
+          this.loadingText = this.add
+            .text(200, 280, "Loading...", {
+              fontFamily: "Fobble",
+              fontSize: "48px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Graphics for background
+          this.loadingBarBg = this.add.graphics();
+          this.loadingBarBg.fillStyle(0x000000, 0.3);
+          this.loadingBarBg.fillRoundedRect(50, 310, 300, 20, 10); // last param = corner radius
+
+          // Graphics for fill
+          this.loadingBarFill = this.add.graphics();
+          this.loadingBarFill.fillStyle(0xa9ff99, 1);
+          this.loadingBarFill.fillRoundedRect(50, 310, 0, 20, 10);
+
+          this.loadingBarWidth = 300;
+        }
+
+        updateLoadingBar(progress) {
+          // Update loading bar
+          this.loadingBarFill.clear();
+          this.loadingBarFill.fillStyle(0xa9ff99, 1);
+          this.loadingBarFill.fillRoundedRect(
+            50,
+            310,
+            this.loadingBarWidth * progress,
+            20,
+            10
+          );
+          // Update loading text
+          const percentage = Math.round(progress * 100);
+          this.loadingText.setText(`Loading... ${percentage}%`);
+        }
+
+        onLoadComplete() {
+          this.anims.create({
+            key: "walk",
+            frames: this.anims.generateFrameNumbers("pudgyPenguin", {
+              start: 0,
+              end: 30,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "piratewalk",
+            frames: this.anims.generateFrameNumbers("piratePenguin", {
+              start: 0,
+              end: 29,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "ninjawalk",
+            frames: this.anims.generateFrameNumbers("ninjaPenguin", {
+              start: 0,
+              end: 29,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "aviatorwalk",
+            frames: this.anims.generateFrameNumbers("aviatorPenguin", {
+              start: 0,
+              end: 29,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "vikingwalk",
+            frames: this.anims.generateFrameNumbers("vikingPenguin", {
+              start: 0,
+              end: 29,
+            }),
+            frameRate: 30,
+            repeat: -1,
+          });
+
+          // Character idle animations
+          this.anims.create({
+            key: "idle",
+            frames: this.anims.generateFrameNumbers("pudgyPenguinIdle", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 8,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "pirateidle",
+            frames: this.anims.generateFrameNumbers("piratePenguinIdle", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 8,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "ninjaidle",
+            frames: this.anims.generateFrameNumbers("ninjaPenguinIdle", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 8,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "aviatoridle",
+            frames: this.anims.generateFrameNumbers("aviatorPenguinIdle", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 8,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "vikingidle",
+            frames: this.anims.generateFrameNumbers("vikingPenguinIdle", {
+              start: 0,
+              end: 7,
+            }),
+            frameRate: 8,
+            repeat: -1,
+          });
+
+          // Platformer animations
+          this.anims.create({
+            key: "spincoin",
+            frames: this.anims.generateFrameNames("coin"),
+            frameRate: 16,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "spinkey",
+            frames: this.anims.generateFrameNames("key"),
+            frameRate: 10,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "fly",
+            frames: this.anims.generateFrameNumbers("bee", {
+              start: 0,
+              end: 17,
+            }),
+            frameRate: 8,
+            repeat: -1,
+          });
+
+          this.anims.create({
+            key: "crawl",
+            frames: this.anims.generateFrameNumbers("slime", {
+              start: 0,
+              end: 19,
+            }),
+            frameRate: 6,
+            yoyo: true,
+            repeat: -1,
+          });
+
+          // Winner animation
+          this.anims.create({
+            key: "win",
+            frames: this.anims.generateFrameNumbers("winner", {
+              start: 0,
+              end: 54,
+            }),
+            frameRate: 15,
+            repeat: 0,
+          });
+
+          // Character textures are loaded as spritesheets
+
+          // Small delay before transitioning
+          this.time.delayedCall(1000, () => {
+            this.cameras.main.fadeOut(500);
+            this.scene.start("HubScene");
+          });
+        }
+      }
+
+      class HubScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "HubScene" });
+          this.selectedCharacter = gameData.currentCharacter || "classic";
+          this.selectedLevel = 1;
+          this.characters = [
+            { id: "classic", name: "CLASSIC PENGUIN", unlocked: true },
+            {
+              id: "pirate",
+              name: "PIRATE PENGUIN",
+              unlocked: gameData.unlockedCharacters.includes("pirate"),
+            },
+
+            {
+              id: "aviator",
+              name: "AVIATOR PENGUIN",
+              unlocked: gameData.unlockedCharacters.includes("aviator"),
+            },
+            {
+              id: "viking",
+              name: "VIKING PENGUIN",
+              unlocked: gameData.unlockedCharacters.includes("viking"),
+            },
+            {
+              id: "ninja",
+              name: "NINJA PENGUIN",
+              unlocked: gameData.unlockedCharacters.includes("ninja"),
+            },
+          ];
+        }
+
+        autoSelectBestOptions() {
+          // Auto-select latest unlocked character
+          this.selectedCharacter = this.getLatestUnlockedCharacter();
+          gameData.saveCurrentCharacter(this.selectedCharacter);
+
+          // Auto-select highest unlocked level (capped at 6 for infinite mode)
+          this.selectedLevel = Math.min(gameData.highestLevel || 1, 6);
+        }
+
+        getLatestUnlockedCharacter() {
+          // Return the last unlocked character, or classic if none unlocked
+          const unlockedCharacters = this.characters.filter(
+            (char) => char.unlocked
+          );
+          if (unlockedCharacters.length > 0) {
+            return unlockedCharacters[unlockedCharacters.length - 1].id;
+          }
+          return "classic";
+        }
+
+        preload() {}
+
+        getCharacterSpriteKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "pudgyPenguin";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratePenguin";
+
+            case "aviator":
+              return "aviatorPenguin";
+            case "viking":
+              return "vikingPenguin";
+            case "ninja":
+              return "ninjaPenguin";
+            default:
+              return "pudgyPenguin";
+          }
+        }
+
+        getCharacterWalkKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "walk";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratewalk";
+
+            case "aviator":
+              return "aviatorwalk";
+            case "viking":
+              return "vikingwalk";
+            case "ninja":
+              return "ninjawalk";
+            default:
+              return "walk";
+          }
+        }
+
+        getCharacterChargeKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "charge";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratecharge";
+            case "ninja":
+              return "ninjaroll";
+            case "aviator":
+              return "aviatorroll";
+            case "viking":
+              return "vikingroll";
+            default:
+              return "charge";
+          }
+        }
+
+        async create() {
+          // Initialize game data if not already done
+          if (!gameData.initialized) {
+            await gameData.initialize();
+          }
+
+          // Update characters array with current unlocked state
+          this.characters.forEach((character) => {
+            character.unlocked = gameData.unlockedCharacters.includes(
+              character.id
+            );
+          });
+
+          // Auto-select latest unlocked character and highest level
+          this.autoSelectBestOptions();
+
+          // Hide UI overlay in hub scene
+          const uiOverlay = document.getElementById("ui-overlay");
+          if (uiOverlay) {
+            uiOverlay.style.display = "none";
+          }
+
+          // Create multi-layer parallax background
+          this.createParallaxBackground();
+
+          // Title
+          this.add
+            .text(200, 75, "Chill Quest", {
+              fontFamily: "Fobble",
+              fontSize: "80px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 10,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Player display
+          this.playerDisplay = this.add.sprite(
+            200,
+            375,
+            this.getCharacterSpriteKey()
+          );
+          this.playerDisplay.setScale(1);
+          this.playerDisplay.play(this.getCharacterWalkKey());
+
+          // Character selection
+          this.createCharacterSelection();
+
+          // Level selection
+          this.createLevelSelection();
+
+          // Stats display
+          this.createStatsDisplay();
+
+          // Play button
+          this.createPlayButton();
+
+          // Controls
+          this.setupHubControls();
+
+          // Update character navigation to reflect current unlock state
+          if (this.updateCharacterNavigation) {
+            this.updateCharacterNavigation();
+          }
+
+          // Start hub music (only if not already playing)
+          if (!this.hubMusic || !this.hubMusic.isPlaying) {
+            // Stop any existing hub music first
+            this.sound.stopAll();
+            this.hubMusic = this.sound.add("HudMusic", {
+              loop: true,
+              volume: 0.5,
+            });
+            if (!gameData.isMuted) {
+              this.hubMusic.play();
+            }
+          }
+        }
+
+        destroy() {
+          // Stop hub music when scene is destroyed
+          if (this.hubMusic) {
+            this.hubMusic.stop();
+          }
+          super.destroy();
+        }
+
+        createCharacterSelection() {
+          // Create character navigation arrows
+          this.createCharacterNavigation();
+        }
+
+        createCharacterNavigation() {
+          // Left arrow
+          this.leftArrow = this.add
+            .text(120, 405, "◄", {
+              fontSize: "32px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setInteractive()
+            .on("pointerdown", () => {
+              playSound(this, "ClickFx", { volume: 0.5 });
+              this.previousCharacter();
+            });
+
+          // Right arrow
+          this.rightArrow = this.add
+            .text(280, 405, "►", {
+              fontSize: "32px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setInteractive()
+            .on("pointerdown", () => {
+              playSound(this, "ClickFx", { volume: 0.5 });
+              this.nextCharacter();
+            });
+
+          // Character name display
+          this.characterNameText = this.add
+            .text(200, 290, this.getCurrentCharacterName(), {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#000000",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Character counter display
+          this.characterCounterText = this.add
+            .text(200, 410, "", {
+              fontFamily: "Menco",
+              fontSize: "32px",
+              fill: "#ffff00",
+              stroke: "#000000",
+              strokeThickness: 1,
+              align: "center",
+            })
+            .setOrigin(0.5)
+            .setVisible(false);
+
+          // Unlock progress display
+          this.unlockProgressText = this.add
+            .text(200, 155, "", {
+              fontFamily: "Menco",
+              fontSize: "14px",
+              fill: "#000000",
+
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Save explanation text
+          /*  this.saveExplanationText = this.add
+            .text(200, 230, "Progress is saved between games.", {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#ff7474",
+              stroke: "#000000",
+              strokeThickness: 3,
+              align: "center",
+            })
+            .setOrigin(0.5); */
+
+          // Initialize with current character
+          this.currentCharacterIndex = this.getCurrentCharacterIndex();
+          this.updateCharacterNavigation();
+        }
+
+        getCurrentCharacterIndex() {
+          return this.characters.findIndex(
+            (character) => character.id === this.selectedCharacter
+          );
+        }
+
+        getCurrentCharacterName() {
+          const currentCharacter = this.characters.find(
+            (character) => character.id === this.selectedCharacter
+          );
+          return currentCharacter ? currentCharacter.name : "Classic Penguin";
+        }
+
+        getUnlockedCharacters() {
+          return this.characters.filter((character) => character.unlocked);
+        }
+
+        nextCharacter() {
+          const unlockedCharacters = this.getUnlockedCharacters();
+          const currentIndex = unlockedCharacters.findIndex(
+            (character) => character.id === this.selectedCharacter
+          );
+          const nextIndex = (currentIndex + 1) % unlockedCharacters.length;
+          this.selectCharacter(unlockedCharacters[nextIndex].id);
+        }
+
+        previousCharacter() {
+          const unlockedCharacters = this.getUnlockedCharacters();
+          const currentIndex = unlockedCharacters.findIndex(
+            (character) => character.id === this.selectedCharacter
+          );
+          const prevIndex =
+            currentIndex === 0
+              ? unlockedCharacters.length - 1
+              : currentIndex - 1;
+          this.selectCharacter(unlockedCharacters[prevIndex].id);
+        }
+
+        updateCharacterNavigation() {
+          // Update character name display
+          if (this.characterNameText) {
+            this.characterNameText.setText(this.getCurrentCharacterName());
+          }
+
+          // Update player character display
+          this.updatePlayerCharacter();
+
+          // Update character counter and progress
+          const unlockedCharacters = this.getUnlockedCharacters();
+          const totalCharacters = this.characters.length;
+
+          if (this.characterCounterText) {
+            this.characterCounterText.setText(
+              `${unlockedCharacters.length}/${totalCharacters} CHARACTERS UNLOCKED`
+            );
+          }
+
+          // Update unlock progress message
+          if (this.unlockProgressText) {
+            if (unlockedCharacters.length === totalCharacters) {
+              this.unlockProgressText.setText("🎉 ALL CHARACTERS UNLOCKED!");
+            } else if (unlockedCharacters.length === 1) {
+              this.unlockProgressText.setText(
+                "COMPLETE LEVELS TO UNLOCK CHARACTERS!"
+              );
+            } else {
+              this.unlockProgressText.setText(
+                "USE ARROWS TO BROWSE UNLOCKED CHARACTERS"
+              );
+            }
+          }
+
+          // Update arrow visibility and behavior
+          if (unlockedCharacters.length <= 1) {
+            this.leftArrow.setAlpha(0.3);
+            this.rightArrow.setAlpha(0.3);
+            this.leftArrow.setTint(0x666666);
+            this.rightArrow.setTint(0x666666);
+            // Remove interactivity when only one character
+            this.leftArrow.removeInteractive();
+            this.rightArrow.removeInteractive();
+          } else {
+            this.leftArrow.setAlpha(1);
+            this.rightArrow.setAlpha(1);
+            this.leftArrow.clearTint();
+            this.rightArrow.clearTint();
+            // Add interactivity when multiple characters
+            this.leftArrow.setInteractive();
+            this.rightArrow.setInteractive();
+          }
+        }
+
+        createLevelSelection() {
+          this.add
+            .text(200, 470, "SELECT LEVEL", {
+              fontFamily: "Fobble",
+              fontSize: "28px",
+              fill: "#ffffff",
+              stroke: "#000000",
+              strokeThickness: 4,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          this.levelButtons = [];
+          const maxLevel = Math.min(gameData.highestLevel + 1, 6);
+
+          for (let i = 1; i <= maxLevel; i++) {
+            const x = 120 + (i - 1) * 30;
+            const y = 505;
+            const isUnlocked = i <= gameData.highestLevel;
+
+            // Level 6 is the infinite mode entry point
+            const levelText = i === 6 ? "6 ∞" : i.toString();
+
+            const levelButton = this.add
+              .text(x, y, levelText, {
+                fontFamily: "Menco",
+                fontSize: i === 6 ? "20px" : "26px",
+                fill: isUnlocked ? "#ffffff" : "#666666",
+                stroke: "#000000",
+                strokeThickness: 3,
+                align: "center",
+              })
+              .setOrigin(0.5);
+
+            if (isUnlocked) {
+              levelButton.setInteractive();
+              levelButton.on("pointerdown", () => {
+                playSound(this, "ClickFx", { volume: 0.5 });
+                this.selectLevel(i, levelButton);
+              });
+            }
+
+            if (i === this.selectedLevel) {
+              levelButton.setTint(0xa9ff99);
+            }
+
+            this.levelButtons.push({
+              level: i,
+              button: levelButton,
+              unlocked: isUnlocked,
+            });
+          }
+        }
+
+        createStatsDisplay() {
+          const displayLevel =
+            gameData.highestLevel >= 6 ? "6 ∞" : gameData.highestLevel;
+          this.add
+            .text(130, 125, `LEVEL: ${displayLevel}`, {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#000000",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+              fontWeight: "bold",
+            })
+            .setOrigin(0.5);
+
+          // Show current session score (0 if coming from game over, persisted score if from level completion)
+          const currentScore = gameData.totalScore || 0;
+          this.add
+            .text(270, 125, `SCORE: ${currentScore}`, {
+              fontFamily: "Menco",
+              fontSize: "18px",
+              fill: "#000000",
+              stroke: "#000000",
+              strokeThickness: 0,
+              align: "center",
+            })
+            .setOrigin(0.5);
+        }
+
+        createPlayButton() {
+          const playButton = this.add
+            .text(200, 550, "START RUN", {
+              fontFamily: "Fobble",
+              fontSize: "42px",
+              fill: "#ffa3ff",
+              stroke: "#000000",
+              strokeThickness: 5,
+              align: "center",
+            })
+            .setOrigin(0.5);
+
+          // Add bobbing animation to catch attention
+          this.tweens.add({
+            targets: playButton,
+            y: 545,
+            duration: 1000,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+          });
+
+          playButton.setInteractive();
+          playButton.on("pointerdown", () => {
+            playSound(this, "StartGameFx", { volume: 0.6 });
+            this.startGame();
+          });
+        }
+
+        setupHubControls() {
+          this.cursors = this.input.keyboard.createCursorKeys();
+          this.spaceKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+          );
+          this.leftKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.A
+          );
+          this.rightKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.D
+          );
+        }
+
+        selectCharacter(characterId) {
+          const character = this.characters.find((c) => c.id === characterId);
+          if (!character || !character.unlocked) return;
+
+          this.selectedCharacter = characterId;
+          gameData.saveCurrentCharacter(characterId);
+          this.updateCharacterNavigation();
+        }
+
+        selectLevel(level, button) {
+          // Remove previous selection tint
+          this.levelButtons.forEach(({ button: btn }) => {
+            btn.clearTint();
+          });
+
+          // Add new selection tint
+          button.setTint(0xa9ff99);
+          this.selectedLevel = level;
+        }
+
+        updatePlayerCharacter() {
+          // Update player display sprite and animation
+          this.playerDisplay.setTexture(this.getCharacterSpriteKey());
+          this.playerDisplay.play(this.getCharacterWalkKey());
+        }
+
+        createParallaxBackground() {
+          // Layer 1: Sky (furthest back)
+          const sky = this.add.image(
+            this.sys.game.config.width / 2,
+            this.sys.game.config.height / 2,
+            "sky"
+          );
+
+          sky.setDepth(-1000);
+
+          // Layer 6: Clouds (multiple instances for parallax effect)
+          const clouds1 = this.add.image(-180, 40, "clouds");
+          clouds1.setScale(0.8);
+          clouds1.setDepth(-500);
+          clouds1.setAlpha(0.7);
+
+          const clouds2 = this.add.image(480, 80, "clouds");
+          clouds2.setScale(1.0);
+          clouds2.setDepth(-400);
+          clouds2.setAlpha(0.8);
+
+          const clouds3 = this.add.image(-150, 120, "clouds");
+          clouds3.setScale(1.2);
+          clouds3.setDepth(-300);
+          clouds3.setAlpha(0.9);
+
+          // Create snow effect
+          this.createSnowEffect();
+
+          // Start cloud movement
+          this.startCloudMovement();
+        }
+
+        createSnowEffect() {
+          // Create snowflake texture
+          this.createSnowflakeTexture();
+
+          // Create snow particles
+          this.snowParticles = this.add.particles(0, 0, "snowflake", {
+            x: { min: 0, max: 400 },
+            y: { min: -50, max: 0 },
+            speedX: { min: -20, max: 20 },
+            speedY: { min: 50, max: 100 },
+            scale: { min: 0.3, max: 0.8 },
+            alpha: { min: 0.3, max: 0.8 },
+            lifespan: 8000,
+            frequency: 100,
+            quantity: 1,
+          });
+          this.snowParticles.setDepth(-200);
+        }
+
+        createSnowflakeTexture() {
+          const graphics = this.add.graphics();
+          graphics.fillStyle(0xffffff, 1);
+          graphics.fillCircle(4, 4, 4);
+          graphics.generateTexture("snowflake", 8, 8);
+          graphics.destroy();
+        }
+
+        startCloudMovement() {
+          // Get all cloud images
+          const clouds = this.children.list.filter(
+            (child) => child.texture && child.texture.key === "clouds"
+          );
+
+          // Animate each cloud to move slowly across the screen
+          clouds.forEach((cloud, index) => {
+            const speed = 0.2 + index * 0.1; // Different speeds for each cloud
+            const direction = index % 2 === 0 ? 1 : -1; // Alternate directions
+
+            this.tweens.add({
+              targets: cloud,
+              x: cloud.x + direction * 200,
+              duration: 20000 + index * 5000, // Different durations
+              yoyo: true,
+              repeat: -1,
+              ease: "Sine.easeInOut",
+            });
+          });
+        }
+
+        fadeOutUIElements() {
+          // Get all UI elements (text, sprites, buttons) that are not background
+          const uiElements = this.children.list.filter(
+            (child) =>
+              child.depth >= 0 && // Not background elements
+              (child.type === "Text" ||
+                child.type === "Sprite" ||
+                child.type === "Container")
+          );
+
+          // Fade out all UI elements
+          uiElements.forEach((element) => {
+            this.tweens.add({
+              targets: element,
+              alpha: 0,
+              duration: 400,
+              ease: "Power2.easeOut",
+            });
+          });
+
+          // Also fade out snow particles
+          if (this.snowParticles) {
+            this.tweens.add({
+              targets: this.snowParticles,
+              alpha: 0,
+              duration: 400,
+              ease: "Power2.easeOut",
+            });
+          }
+        }
+
+        startGame() {
+          // Stop hub music before starting game
+          if (this.hubMusic) {
+            this.hubMusic.stop();
+          }
+
+          // Fade out all UI elements first
+          this.fadeOutUIElements();
+
+          // Create parallax zoom effect through layers after UI fades
+          this.time.delayedCall(500, () => {
+            this.createParallaxZoomEffect();
+          });
+
+          // Start game scene after zoom effect
+          this.time.delayedCall(1500, () => {
+            this.scene.start("GameScene", {
+              selectedCharacter: this.selectedCharacter,
+              selectedLevel: this.selectedLevel,
+              isNewGame: true,
+            });
+          });
+        }
+
+        createParallaxZoomEffect() {
+          // Get all background layers
+          const layers = this.children.list.filter((child) => child.depth < 0);
+
+          // Create dramatic parallax zoom effect
+          layers.forEach((layer, index) => {
+            const depth = Math.abs(layer.depth);
+            const parallaxFactor = depth / 1000; // 0 to 1 based on depth
+
+            // Closer layers (higher depth numbers) move more
+            const moveDistance = 300 * parallaxFactor;
+            const scaleMultiplier = 1 + parallaxFactor * 2; // Closer layers scale more
+
+            this.tweens.add({
+              targets: layer,
+              scaleX: layer.scaleX * scaleMultiplier,
+              scaleY: layer.scaleY * scaleMultiplier,
+
+              duration: 1500,
+            });
+          });
+
+          // Add camera zoom for cinematic effect
+          this.cameras.main.fadeOut(1500);
+        }
+
+        update() {
+          // Safety check - ensure input system is ready
+          if (!this.input || !this.input.keyboard) return;
+
+          // Handle keyboard navigation
+          if (this.spaceKey && Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+            this.startGame();
+          }
+
+          // Handle character navigation
+          if (
+            (this.leftKey && Phaser.Input.Keyboard.JustDown(this.leftKey)) ||
+            (this.cursors &&
+              this.cursors.left &&
+              Phaser.Input.Keyboard.JustDown(this.cursors.left))
+          ) {
+            this.previousCharacter();
+          }
+          if (
+            (this.rightKey && Phaser.Input.Keyboard.JustDown(this.rightKey)) ||
+            (this.cursors &&
+              this.cursors.right &&
+              Phaser.Input.Keyboard.JustDown(this.cursors.right))
+          ) {
+            this.nextCharacter();
+          }
+        }
+      }
+
+      // ==================== PLATFORMER LEVEL DEFINITIONS ====================
+      const PlatformerLevels = [
+        // Level 1
+        [
+          "   K    S       ",
+          "  [/////]       ",
+          "                ",
+          "   P         G  ",
+          "[/////]   [////]",
+        ],
+        // Level 2
+        [
+          "               B  K                   ",
+          "               [/////]                ",
+          "              C     C                 ",
+          "   S        B            S    S    G  ",
+          "[//]       [////]   [////]   [//////] ",
+          "    C   C                             ",
+          " P        B                           ",
+          "[///]  [//]                           ",
+        ],
+        // Level 3
+        [
+          " P                     [//]       G   ",
+          "[/]    C   B        C           [/]   ",
+          "         [//]     [//]                ",
+          "      S                     B  B      ",
+          " C  [//]      B            [///]      ",
+          "            [///]     []  C        C  ",
+          "[]        K                           ",
+          "         [/]            [/]      [/]  ",
+        ],
+        // Level 4
+        [
+          "       C                                    ",
+          "                      C                 C   ",
+          "      [///]                 C      [////]   ",
+          "           [///]       S  [//]  K           ",
+          "                   [///]      [///]         ",
+          "             S                              ",
+          "         [///]           C              G   ",
+          "      C            C               [////]   ",
+          "  P                     S  B                ",
+          "[//////]       [///]  [////]                ",
+        ],
+        // Level 5
+        [
+          "                        C  C         S                                  ",
+          "                                 [//////]      K     B               G  ",
+          "                  C    [/////]                [///////]          [////] ",
+          "                                                                        ",
+          "  P      S     B    B              C       S     S         S            ",
+          "[////////]  [///////]             [/]    [////////////////////]         ",
+        ],
+      ];
+
+      // ==================== PROCEDURAL LEVEL GENERATOR ====================
+      class LevelGenerator {
+        static generateLevel(levelNumber, seed) {
+          // Use level number as seed for consistent generation
+          const random = this.seededRandom(seed || levelNumber);
+
+          // Difficulty scales with level (0-based for first procedural level)
+          const proceduralLevel = levelNumber - 5; // Level 6 = 1, Level 7 = 2, etc.
+          const difficulty = Math.min(proceduralLevel / 3, 5);
+
+          // Map dimensions scale more aggressively with level
+          const width = Math.floor(35 + proceduralLevel * 8); // Much longer levels
+          // Limit height to ensure background coverage (max ~13 tiles for 600px background at 0.45 zoom)
+          const height = Math.floor(4 + Math.min(proceduralLevel * 1.2, 4)); // Reduced max height
+
+          // Create empty map
+          const map = Array(height)
+            .fill(null)
+            .map(() => Array(width).fill(" "));
+
+          // Generate platforms with more density
+          this.generatePlatforms(map, random, difficulty, proceduralLevel);
+
+          // Place player at start
+          this.placePlayer(map);
+
+          // Place goal at end
+          this.placeGoal(map);
+
+          // Place key (required to complete level)
+          this.placeKey(map, random);
+
+          // Place more coins as levels progress
+          this.placeCoins(map, random, Math.floor(8 + difficulty * 4));
+
+          // Place more enemies as levels progress
+          this.placeEnemies(map, random, Math.floor(3 + difficulty * 2));
+
+          // Convert to string array
+          return map.map((row) => row.join(""));
+        }
+
+        static seededRandom(seed) {
+          let value = seed;
+          return function () {
+            value = (value * 9301 + 49297) % 233280;
+            return value / 233280;
+          };
+        }
+
+        static generatePlatforms(map, random, difficulty, proceduralLevel) {
+          const width = map[0].length;
+          const height = map.length;
+          // Ensure ground level is not too low (max 12 tiles from top to ensure background coverage)
+          const maxGroundLevel = Math.min(height - 1, 12);
+          const groundLevel = maxGroundLevel;
+          const midHeight = Math.floor(height / 2);
+          const minVerticalSpacing = 2; // Minimum tiles between platforms vertically
+
+          // Create starting platform
+          const startLength = 6 + Math.floor(random() * 4);
+          for (let x = 0; x < startLength; x++) {
+            this.placePlatformTile(map, x, groundLevel);
+          }
+
+          // Generate main platform path across the map
+          let currentX = startLength + 1;
+          let currentY = groundLevel;
+          let jumpsSinceLastPlatform = 0;
+
+          while (currentX < width - 15) {
+            // Ensure connection to ending platform
+            // Platform length varies (3-7 tiles)
+            const platformLength = 3 + Math.floor(random() * 5);
+
+            // More dramatic height changes (use more vertical space)
+            let heightChange;
+            if (jumpsSinceLastPlatform > 2) {
+              // Force a platform at a reachable height
+              heightChange = 0;
+            } else if (currentY > midHeight && random() > 0.5) {
+              // Encourage going up
+              heightChange = -1 - Math.floor(random() * 3);
+            } else if (currentY < midHeight - 2 && random() > 0.5) {
+              // Encourage going down
+              heightChange = 1 + Math.floor(random() * 2);
+            } else {
+              // Random movement
+              heightChange = Math.floor(random() * 7) - 3; // -3 to +3
+            }
+
+            const newY = Math.max(
+              1,
+              Math.min(groundLevel, currentY + heightChange)
+            );
+
+            // Check if there's enough vertical spacing from nearby platforms
+            if (
+              this.hasPlatformNearby(map, currentX, newY, minVerticalSpacing)
+            ) {
+              // If too close, try alternative heights
+              const alternativeHeights = [];
+              for (let dy = -3; dy <= 3; dy++) {
+                const testY = Math.max(1, Math.min(groundLevel, newY + dy));
+                if (
+                  !this.hasPlatformNearby(
+                    map,
+                    currentX,
+                    testY,
+                    minVerticalSpacing
+                  )
+                ) {
+                  alternativeHeights.push(testY);
+                }
+              }
+
+              if (alternativeHeights.length > 0) {
+                currentY =
+                  alternativeHeights[
+                    Math.floor(random() * alternativeHeights.length)
+                  ];
+              } else {
+                // If no good alternative, use original but with minimum spacing
+                currentY = newY;
+              }
+            } else {
+              currentY = newY;
+            }
+
+            // Place main platform
+            for (
+              let i = 0;
+              i < platformLength && currentX + i < width - 12;
+              i++
+            ) {
+              this.placePlatformTile(map, currentX + i, currentY);
+            }
+
+            // Add intermediate stepping platforms for big gaps or height differences
+            // Keep gaps random but always reachable
+            let gap = 2 + Math.floor(random() * 2); // 2-3 tiles (random)
+
+            // Ensure gap is reachable
+            if (!this.isGapReachable(gap, heightChange)) {
+              gap = Math.max(1, Math.floor(gap * 0.6));
+            }
+
+            if (gap > 3 || Math.abs(heightChange) > 1) {
+              // Add a small stepping stone platform
+              const stepX = currentX + platformLength + Math.floor(gap / 2);
+              const stepY = currentY + Math.floor(heightChange / 2);
+              const stepLength = 2 + Math.floor(random() * 2);
+
+              // Check vertical spacing for stepping platform
+              if (
+                !this.hasPlatformNearby(map, stepX, stepY, minVerticalSpacing)
+              ) {
+                for (let i = 0; i < stepLength && stepX + i < width - 12; i++) {
+                  this.placePlatformTile(
+                    map,
+                    stepX + i,
+                    Math.max(1, Math.min(groundLevel, stepY))
+                  );
+                }
+              }
+            }
+
+            // Add floating platforms above/below for more vertical options
+            if (random() > 0.5 && currentY > 3) {
+              const floatY = currentY - 2 - Math.floor(random() * 2);
+              const floatX = currentX + Math.floor(random() * platformLength);
+              const floatLength = 3 + Math.floor(random() * 4);
+
+              // Check vertical spacing for floating platform
+              if (
+                !this.hasPlatformNearby(map, floatX, floatY, minVerticalSpacing)
+              ) {
+                for (
+                  let i = 0;
+                  i < floatLength && floatX + i < width - 12;
+                  i++
+                ) {
+                  this.placePlatformTile(map, floatX + i, Math.max(1, floatY));
+                }
+              }
+            }
+
+            // Add lower platforms for variety
+            if (random() > 0.6 && currentY < groundLevel - 1) {
+              const lowerY = currentY + 2 + Math.floor(random() * 2);
+              const lowerX = currentX + Math.floor(random() * platformLength);
+              const lowerLength = 3 + Math.floor(random() * 3);
+
+              // Check vertical spacing for lower platform
+              if (
+                !this.hasPlatformNearby(map, lowerX, lowerY, minVerticalSpacing)
+              ) {
+                for (
+                  let i = 0;
+                  i < lowerLength && lowerX + i < width - 12;
+                  i++
+                ) {
+                  this.placePlatformTile(
+                    map,
+                    lowerX + i,
+                    Math.min(groundLevel, lowerY)
+                  );
+                }
+              }
+            }
+
+            // Move to next platform position (ensure reachable gaps)
+            // Keep gaps random but always reachable
+            let nextGap = 1 + Math.floor(random() * 3); // 1-3 tiles (random)
+
+            // Ensure gap is reachable based on height difference
+            const heightDifference = newY - currentY;
+            if (!this.isGapReachable(nextGap, heightDifference)) {
+              // Reduce gap to make it reachable
+              nextGap = Math.max(1, Math.floor(nextGap * 0.7));
+            }
+
+            currentX += platformLength + nextGap;
+            jumpsSinceLastPlatform =
+              nextGap > 3 ? jumpsSinceLastPlatform + 1 : 0;
+          }
+
+          // Create ending platform (consistent length)
+          const endLength = 10; // Fixed length, no random scaling
+
+          // Ensure there's a platform connection to the ending platform
+          // Add a small platform before the ending platform if needed
+          const gapToEnd = width - endLength - currentX;
+          if (gapToEnd > 2) {
+            // If gap is too large, add a connecting platform
+            const connectLength = 3;
+            const connectX = width - endLength - connectLength - 1;
+            for (let x = connectX; x < connectX + connectLength; x++) {
+              this.placePlatformTile(map, x, groundLevel);
+            }
+          }
+
+          for (let x = width - endLength; x < width; x++) {
+            this.placePlatformTile(map, x, groundLevel);
+          }
+
+          // Add a few extra random platforms throughout the level for more paths
+          const extraPlatforms = Math.floor(5 + proceduralLevel * 2);
+          for (let i = 0; i < extraPlatforms; i++) {
+            const x = Math.floor(random() * (width - 15)) + 10;
+            const y = Math.floor(random() * (height - 2)) + 1;
+            const length = 2 + Math.floor(random() * 4);
+
+            // Check vertical spacing for extra platforms
+            if (!this.hasPlatformNearby(map, x, y, minVerticalSpacing)) {
+              for (let j = 0; j < length && x + j < width - 12; j++) {
+                this.placePlatformTile(map, x + j, y);
+              }
+            }
+          }
+        }
+
+        static hasPlatformNearby(map, x, y, minSpacing) {
+          const height = map.length;
+          const width = map[0].length;
+
+          // Check vertical area around the position
+          for (let dy = -minSpacing; dy <= minSpacing; dy++) {
+            const checkY = y + dy;
+            if (checkY >= 0 && checkY < height) {
+              // Check horizontal area around the position
+              for (let dx = -2; dx <= 2; dx++) {
+                const checkX = x + dx;
+                if (checkX >= 0 && checkX < width) {
+                  const tile = map[checkY][checkX];
+                  if (tile === "/" || tile === "[" || tile === "]") {
+                    return true; // Found a platform too close
+                  }
+                }
+              }
+            }
+          }
+          return false; // No platforms too close
+        }
+
+        static isGapReachable(gapInTiles, heightDifference) {
+          // Calculate maximum reachable distance based on physics
+          // Jump velocity: -1550, Gravity: 3000, Horizontal velocity: 550
+          const maxJumpHeight = (1550 * 1550) / (2 * 3000); // ~400 pixels
+          const maxHorizontalDistance = 550 * (1550 / 3000) * 2; // ~572 pixels
+          const maxReachableTiles = Math.floor(maxHorizontalDistance / 96); // ~6 tiles
+
+          // Account for height difference (more height = less horizontal distance)
+          const heightPenalty = Math.abs(heightDifference) * 0.7; // Increased from 0.5 to 0.7
+          const adjustedMaxTiles = maxReachableTiles - heightPenalty;
+
+          // Add safety margin for longer levels (be more conservative)
+          const safetyMargin = 1; // 1 tile safety margin
+          const finalMaxTiles = Math.max(1, adjustedMaxTiles - safetyMargin);
+
+          return gapInTiles <= finalMaxTiles;
+        }
+
+        static placePlatformTile(map, x, y) {
+          if (
+            y < 0 ||
+            y >= map.length ||
+            x < 0 ||
+            x >= map[0].length ||
+            !map[y]
+          )
+            return;
+
+          const width = map[0].length;
+
+          // Determine tile type based on neighbors
+          const hasLeft =
+            x > 0 &&
+            (map[y][x - 1] === "/" ||
+              map[y][x - 1] === "[" ||
+              map[y][x - 1] === "]");
+          const hasRight =
+            x < width - 1 &&
+            (map[y][x + 1] === "/" ||
+              map[y][x + 1] === "[" ||
+              map[y][x + 1] === "]");
+
+          if (!hasLeft && !hasRight) {
+            map[y][x] = "["; // Will be converted to single tile
+          } else if (!hasLeft) {
+            map[y][x] = "[";
+          } else if (!hasRight) {
+            map[y][x] = "]";
+          } else {
+            map[y][x] = "/";
+          }
+        }
+
+        static placePlayer(map) {
+          const height = map.length;
+          const groundLevel = height - 1;
+
+          // Place player above starting platform
+          map[groundLevel - 1][3] = "P";
+        }
+
+        static placeGoal(map) {
+          const width = map[0].length;
+          const height = map.length;
+          const groundLevel = height - 1;
+
+          // Place goal at the end
+          map[groundLevel - 1][width - 3] = "G";
+        }
+
+        static placeKey(map, random) {
+          const width = map[0].length;
+          const height = map.length;
+
+          // First, try to find a platform in the middle section
+          const middleStart = Math.floor(width * 0.3);
+          const middleEnd = Math.floor(width * 0.7);
+
+          for (let attempt = 0; attempt < 30; attempt++) {
+            const x =
+              middleStart + Math.floor(random() * (middleEnd - middleStart));
+            const y = Math.floor(random() * (height - 1));
+
+            // Check if there's a platform below
+            if (
+              y < height - 1 &&
+              this.isPlatform(map, x, y + 1) &&
+              map[y][x] === " "
+            ) {
+              map[y][x] = "K";
+              return;
+            }
+          }
+
+          // If no platform found in middle, search the entire map
+          for (let attempt = 0; attempt < 100; attempt++) {
+            const x = Math.floor(random() * (width - 2)) + 1;
+            const y = Math.floor(random() * (height - 1));
+
+            // Check if there's a platform below
+            if (
+              y < height - 1 &&
+              this.isPlatform(map, x, y + 1) &&
+              map[y][x] === " "
+            ) {
+              map[y][x] = "K";
+              return;
+            }
+          }
+
+          // Last resort: place key on any platform tile
+          for (let y = 0; y < height - 1; y++) {
+            for (let x = 1; x < width - 1; x++) {
+              if (this.isPlatform(map, x, y) && map[y - 1][x] === " ") {
+                map[y - 1][x] = "K";
+                return;
+              }
+            }
+          }
+        }
+
+        static placeCoins(map, random, count) {
+          const width = map[0].length;
+          const height = map.length;
+
+          let placed = 0;
+          for (
+            let attempt = 0;
+            attempt < count * 15 && placed < count;
+            attempt++
+          ) {
+            const x = Math.floor(random() * width);
+            const y = Math.floor(random() * (height - 1));
+
+            // Safety checks for map bounds
+            if (y < 0 || y >= height || x < 0 || x >= width || !map[y]) {
+              continue;
+            }
+
+            // Check if there's a platform below and space is empty
+            if (
+              y < height - 1 &&
+              this.isPlatform(map, x, y + 1) &&
+              map[y][x] === " "
+            ) {
+              map[y][x] = "C";
+              placed++;
+
+              // Sometimes place coins in a row for collection chains
+              if (random() > 0.7 && placed < count) {
+                for (
+                  let i = 1;
+                  i <= 2 && x + i < width && placed < count;
+                  i++
+                ) {
+                  if (
+                    y < height - 1 &&
+                    this.isPlatform(map, x + i, y + 1) &&
+                    map[y][x + i] === " "
+                  ) {
+                    map[y][x + i] = "C";
+                    placed++;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        static placeEnemies(map, random, count) {
+          const width = map[0].length;
+          const height = map.length;
+          const midHeight = Math.floor(height / 2);
+
+          // Player starting position (x=3, y=groundLevel-1)
+          const playerStartX = 3;
+          const playerStartY = height - 2; // groundLevel - 1
+          const playerBufferZone = 12; // 8 tiles buffer around player (increased from 5)
+          const startingPlatformLength = 10; // Starting platform is about 6-10 tiles long
+
+          let placed = 0;
+          for (
+            let attempt = 0;
+            attempt < count * 15 && placed < count;
+            attempt++
+          ) {
+            const x = Math.floor(random() * (width - 15)) + 8; // Not too close to start/end
+            const y = Math.floor(random() * (height - 1));
+
+            // Safety checks for map bounds
+            if (y < 0 || y >= height || x < 0 || x >= width || !map[y]) {
+              continue;
+            }
+
+            // Check if enemy is on the same platform as player (starting platform)
+            if (
+              y === playerStartY &&
+              x < playerStartX + startingPlatformLength
+            ) {
+              continue; // Skip if on starting platform
+            }
+
+            // Check if enemy is too close to player start position
+            const distanceFromPlayer = Math.sqrt(
+              Math.pow(x - playerStartX, 2) + Math.pow(y - playerStartY, 2)
+            );
+            if (distanceFromPlayer < playerBufferZone) {
+              continue; // Skip this position, too close to player
+            }
+
+            // Additional check: ensure enemy is not in the first 15 tiles horizontally
+            if (x < 6) {
+              continue; // Skip if too close to start
+            }
+
+            // Check if there's a platform below and space is empty
+            if (
+              y < height - 1 &&
+              this.isPlatform(map, x, y + 1) &&
+              map[y][x] === " "
+            ) {
+              // Check for nearby enemies to prevent stacking/clustering
+              let tooClose = false;
+              for (
+                let checkY = Math.max(0, y - 2);
+                checkY <= Math.min(height - 1, y + 2);
+                checkY++
+              ) {
+                for (
+                  let checkX = Math.max(0, x - 2);
+                  checkX <= Math.min(width - 1, x + 2);
+                  checkX++
+                ) {
+                  if (
+                    map[checkY][checkX] === "S" ||
+                    map[checkY][checkX] === "B"
+                  ) {
+                    tooClose = true;
+                    break;
+                  }
+                }
+                if (tooClose) break;
+              }
+
+              if (!tooClose) {
+                // Use Bees more often in higher areas, Slimes more in lower areas
+                let enemyType;
+                if (y < midHeight) {
+                  // Upper half - more bees (they fly)
+                  enemyType = random() > 0.3 ? "B" : "S";
+                } else {
+                  // Lower half - more slimes (they crawl)
+                  enemyType = random() > 0.6 ? "B" : "S";
+                }
+
+                map[y][x] = enemyType;
+                placed++;
+              }
+            }
+          }
+        }
+
+        static isPlatform(map, x, y) {
+          if (
+            y < 0 ||
+            y >= map.length ||
+            x < 0 ||
+            x >= map[0].length ||
+            !map[y]
+          )
+            return false;
+          const tile = map[y][x];
+          return tile === "[" || tile === "/" || tile === "]";
+        }
+      }
+
+      // ==================== MAP CLASS ====================
+      class PlatformerMap {
+        static calcCurrentLevel(currentLevel) {
+          const MAX_LEVELS = PlatformerLevels.length;
+          return currentLevel % MAX_LEVELS;
+        }
+
+        constructor(currentLevel) {
+          const TILE_SIZE = 96;
+          const config = {
+            "[": { type: "tile", texture: "tile-left" },
+            "/": { type: "tile", texture: "tile-middle" },
+            "]": { type: "tile", texture: "tile-right" },
+            G: { type: "goal", texture: "goal" },
+            C: { type: "object", texture: "coin" },
+            K: { type: "object", texture: "key" },
+            S: { type: "enemy", texture: "slime" },
+            B: { type: "enemy", texture: "bee" },
+            P: { type: "player", texture: "player" },
+          };
+
+          // Use predefined levels for first 5, then generate procedurally
+          let map;
+          if (currentLevel < PlatformerLevels.length) {
+            map = PlatformerLevels[currentLevel];
+          } else {
+            // Generate procedural level
+            map = LevelGenerator.generateLevel(currentLevel);
+          }
+
+          const paddingTop = 4 * TILE_SIZE;
+          const mobileControlOffset = 200; // Shift content up to avoid mobile controls
+          const totalOffset = paddingTop - mobileControlOffset;
+
+          this.size = {
+            x: 0,
+            y: 0,
+            width: map[0].length * TILE_SIZE,
+            height: map.length * TILE_SIZE + totalOffset,
+          };
+          this.info = [];
+
+          map.forEach((row, y) => {
+            for (let i = 0; i < row.length; i++) {
+              const tile = row.charAt(i);
+              const x = i;
+              if (tile !== " ") {
+                let info = {
+                  ...config[tile.toString()],
+                  x: x * TILE_SIZE,
+                  y: y * TILE_SIZE + totalOffset,
+                };
+                this.info.push(info);
+              }
+            }
+          });
+        }
+      }
+
+      // ==================== TILES ====================
+      class TilesSingle extends Phaser.Physics.Arcade.Sprite {
+        constructor(scene, x, y, texture) {
+          super(scene, x, y, texture);
+          this.setOrigin(0, 0);
+          scene.add.existing(this);
+          scene.physics.add.existing(this, true);
+          this.body.checkCollision.down = false;
+          this.body.checkCollision.right = false;
+          this.body.checkCollision.left = false;
+        }
+      }
+
+      class ThemedPlatform extends Phaser.Physics.Arcade.Sprite {
+        constructor(
+          scene,
+          x,
+          y,
+          width,
+          height,
+          theme,
+          movementType = "static"
+        ) {
+          // Create a graphics object for the platform
+          const graphics = scene.add.graphics();
+
+          // Get theme colors (static method call)
+          const platformColors = ThemedPlatform.getPlatformColors(theme);
+
+          // Draw the platform with theme-appropriate styling (static method call)
+          ThemedPlatform.drawPlatform(
+            graphics,
+            width,
+            height,
+            platformColors,
+            movementType
+          );
+
+          // Generate texture from graphics
+          graphics.generateTexture("themedPlatform", width, height);
+          graphics.destroy();
+
+          // Create sprite from generated texture
+          super(scene, x, y, "themedPlatform");
+          this.setOrigin(0, 0);
+          scene.add.existing(this);
+          scene.physics.add.existing(this, true);
+          this.body.checkCollision.down = false;
+          this.body.checkCollision.right = false;
+          this.body.checkCollision.left = false;
+
+          // Store movement properties
+          this.movementType = movementType;
+          this.startX = x;
+          this.startY = y;
+          this.movementSpeed = 50; // pixels per second
+          this.movementDistance = 100; // how far to move
+          this.movementDirection = 1; // 1 or -1
+
+          // Start movement if not static
+          if (movementType !== "static") {
+            this.startMovement();
+          }
+        }
+
+        startMovement() {
+          if (this.movementType === "horizontal") {
+            this.moveHorizontal();
+          } else if (this.movementType === "vertical") {
+            this.moveVertical();
+          } else if (this.movementType === "circular") {
+            this.moveCircular();
+          }
+        }
+
+        moveHorizontal() {
+          // Move left and right
+          this.scene.tweens.add({
+            targets: this,
+            x: this.startX + this.movementDistance,
+            duration: (this.movementDistance / this.movementSpeed) * 1000,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+            onUpdate: () => {
+              // Update physics body position to match visual position
+              this.body.x = this.x;
+              this.body.y = this.y;
+            },
+          });
+        }
+
+        moveVertical() {
+          // Move up and down
+          this.scene.tweens.add({
+            targets: this,
+            y: this.startY + this.movementDistance,
+            duration: (this.movementDistance / this.movementSpeed) * 1000,
+            ease: "Sine.easeInOut",
+            yoyo: true,
+            repeat: -1,
+            onUpdate: () => {
+              // Update physics body position to match visual position
+              this.body.x = this.x;
+              this.body.y = this.y;
+            },
+          });
+        }
+
+        moveCircular() {
+          // Move in a circular pattern
+          this.circleAngle = 0;
+          this.circleRadius = this.movementDistance / 2;
+          this.circleCenterX = this.startX + this.circleRadius;
+          this.circleCenterY = this.startY + this.circleRadius;
+
+          this.scene.time.addEvent({
+            delay: 16, // ~60fps
+            callback: () => {
+              this.circleAngle +=
+                (this.movementSpeed / this.circleRadius) * 0.016; // 16ms = ~0.016s
+              this.x =
+                this.circleCenterX +
+                Math.cos(this.circleAngle) * this.circleRadius;
+              this.y =
+                this.circleCenterY +
+                Math.sin(this.circleAngle) * this.circleRadius;
+
+              // Update physics body position to match visual position
+              this.body.x = this.x;
+              this.body.y = this.y;
+            },
+            loop: true,
+          });
+        }
+
+        static getPlatformColors(theme) {
+          if (theme.name === "PIRATE") {
+            return {
+              main: 0xe0f6ff, // light blue
+              outline: 0x87ceeb, // sky blue
+              highlight: 0xffffff, // white
+              sparkle: 0xffffff, // white sparkles
+            };
+          } else if (theme.name === "AVIATOR") {
+            return {
+              main: 0xf0f8ff, // alice blue (cloud-like)
+              outline: 0xb0c4de, // light steel blue
+              highlight: 0xffffff, // white
+              sparkle: 0xffd700, // gold sparkles (sunlight)
+            };
+          } else if (theme.name === "VIKING") {
+            return {
+              main: 0x8b0000, // dark red (volcanic rock)
+              outline: 0xff4500, // orange-red outline
+              highlight: 0xffd700, // gold highlight
+              sparkle: 0xff6347, // tomato red sparkles (fire embers)
+            };
+          } else if (theme.name === "NINJA") {
+            return {
+              main: 0x2c2c54, // dark purple
+              outline: 0x40407a, // medium purple
+              highlight: 0x706fd3, // light purple highlight
+              sparkle: 0x00ff00, // green sparkles (ninja energy)
+            };
+          } else {
+            // Default pirate theme
+            return {
+              main: 0xe0f6ff,
+              outline: 0x87ceeb,
+              highlight: 0xffffff,
+              sparkle: 0xffffff,
+            };
+          }
+        }
+
+        static drawPlatform(
+          graphics,
+          width,
+          height,
+          colors,
+          movementType = "static"
+        ) {
+          // Main platform body with gradient effect
+          graphics.fillStyle(colors.main);
+          graphics.fillRoundedRect(0, 0, width, height, 12);
+
+          // Darker bottom for depth
+          graphics.fillStyle(
+            Phaser.Display.Color.GetColor32(
+              Phaser.Display.Color.ColorToRGBA(colors.main).r - 20,
+              Phaser.Display.Color.ColorToRGBA(colors.main).g - 20,
+              Phaser.Display.Color.ColorToRGBA(colors.main).b - 20,
+              255
+            )
+          );
+
+          // Outline with thicker border
+          graphics.lineStyle(4, colors.outline);
+          graphics.strokeRoundedRect(0, 0, width, height, 12);
+
+          // Inner outline for extra definition
+          graphics.lineStyle(2, colors.highlight, 0.5);
+          graphics.strokeRoundedRect(2, 2, width - 4, height - 4, 10);
+
+          // Top highlight with gradient
+          graphics.fillStyle(colors.highlight, 0.4);
+          graphics.fillRoundedRect(3, 3, width - 6, height / 2, 8);
+
+          // Add movement indicators for moving platforms
+          if (movementType !== "static") {
+            ThemedPlatform.addMovementIndicators(
+              graphics,
+              width,
+              height,
+              colors,
+              movementType
+            );
+          }
+
+          // Add theme-specific decorations
+          ThemedPlatform.addThemeDecorations(graphics, width, height, colors);
+        }
+
+        static addMovementIndicators(
+          graphics,
+          width,
+          height,
+          colors,
+          movementType
+        ) {
+          // Add arrows to indicate movement direction
+          graphics.fillStyle(colors.highlight, 0.8);
+
+          if (movementType === "horizontal") {
+            // Left and right arrows
+            graphics.fillTriangle(
+              8,
+              height / 2,
+              20,
+              height / 2 - 6,
+              20,
+              height / 2 + 6
+            ); // Left arrow
+            graphics.fillTriangle(
+              width - 8,
+              height / 2,
+              width - 20,
+              height / 2 - 6,
+              width - 20,
+              height / 2 + 6
+            ); // Right arrow
+          } else if (movementType === "vertical") {
+            // Up and down arrows
+            graphics.fillTriangle(
+              width / 2,
+              8,
+              width / 2 - 6,
+              20,
+              width / 2 + 6,
+              20
+            ); // Up arrow
+            graphics.fillTriangle(
+              width / 2,
+              height - 8,
+              width / 2 - 6,
+              height - 20,
+              width / 2 + 6,
+              height - 20
+            ); // Down arrow
+          } else if (movementType === "circular") {
+            // Circular motion indicator (small circles)
+            graphics.fillCircle(width / 2, height / 2, 3);
+            graphics.fillCircle(width / 2 + 15, height / 2, 2);
+            graphics.fillCircle(width / 2 - 15, height / 2, 2);
+            graphics.fillCircle(width / 2, height / 2 + 15, 2);
+            graphics.fillCircle(width / 2, height / 2 - 15, 2);
+          }
+        }
+
+        static addThemeDecorations(graphics, width, height, colors) {
+          // Add sparkles/decorations based on theme
+          const sparkleCount = 4;
+          for (let i = 0; i < sparkleCount; i++) {
+            const sparkleX = 8 + (i * (width - 16)) / (sparkleCount - 1);
+            const sparkleY = 6 + Math.sin(i) * 3;
+
+            // Main sparkle
+            graphics.fillStyle(colors.sparkle, 0.8);
+            graphics.fillCircle(sparkleX, sparkleY, 3);
+
+            // Sparkle highlight
+            graphics.fillStyle(colors.highlight, 0.9);
+            graphics.fillCircle(sparkleX + 1, sparkleY - 1, 1.5);
+
+            // Small accent sparkles
+            graphics.fillStyle(colors.sparkle, 0.4);
+            graphics.fillCircle(sparkleX - 2, sparkleY + 2, 1);
+            graphics.fillCircle(sparkleX + 2, sparkleY + 2, 1);
+          }
+
+          // Add some texture lines
+          graphics.lineStyle(1, colors.outline, 0.3);
+          for (let i = 0; i < 3; i++) {
+            const y = 12 + i * 8;
+            graphics.beginPath();
+            graphics.moveTo(4, y);
+            graphics.lineTo(width - 4, y);
+            graphics.strokePath();
+          }
+        }
+      }
+
+      class TilesGroup extends Phaser.GameObjects.Group {
+        constructor(
+          scene,
+          tiles,
+          levelTheme,
+          playerStart,
+          goalPosition,
+          currentLevel = 1
+        ) {
+          super(scene);
+          tiles.forEach((tile, index) => {
+            // Randomly assign movement type to some platforms (only from level 3+, reduced chance)
+            let movementType = "static";
+            const random = Math.random();
+
+            // Check if this platform is near player start or goal
+            const isNearPlayerStart = this.isNearPosition(
+              tile.x,
+              tile.y,
+              playerStart,
+              150
+            );
+            const isNearGoal = this.isNearPosition(
+              tile.x,
+              tile.y,
+              goalPosition,
+              150
+            );
+
+            // Only make platforms move if they're not near critical positions AND level 3+
+            if (!isNearPlayerStart && !isNearGoal && currentLevel >= 3) {
+              if (random < 0.05) {
+                // Reduced from 0.1 to 0.025 (quarter)
+                movementType = "horizontal";
+              } else if (random < 0.08) {
+                // Reduced from 0.15 to 0.0375 (quarter)
+                movementType = "vertical";
+              } else if (random < 0.09) {
+                // Reduced from 0.2 to 0.05 (quarter)
+                movementType = "circular";
+              }
+            }
+
+            // Create themed platform instead of using tile sprites
+            const platform = new ThemedPlatform(
+              scene,
+              tile.x,
+              tile.y,
+              96, // TILE_SIZE
+              96, // TILE_SIZE
+              levelTheme,
+              movementType
+            );
+            this.add(platform);
+          });
+        }
+
+        isNearPosition(tileX, tileY, targetPosition, bufferDistance) {
+          if (!targetPosition) return false;
+
+          const distance = Math.sqrt(
+            Math.pow(tileX - targetPosition.x, 2) +
+              Math.pow(tileY - targetPosition.y, 2)
+          );
+
+          return distance < bufferDistance;
+        }
+
+        // Fix enemy placement after platforms are created
+        fixEnemyPlacement() {
+          const enemies = this.scene.enemies.children.entries;
+          const movingPlatforms = this.children.entries.filter(
+            (platform) =>
+              platform.movementType && platform.movementType !== "static"
+          );
+
+          for (let enemy of enemies) {
+            // Check if enemy is too close to any moving platform
+            for (let platform of movingPlatforms) {
+              const distance = Math.sqrt(
+                Math.pow(enemy.x - platform.x, 2) +
+                  Math.pow(enemy.y - platform.y, 2)
+              );
+
+              // If enemy is within 3 tiles of a moving platform, move it
+              if (distance < 288) {
+                // 3 tiles * 96 pixels
+                this.moveEnemyAwayFromPlatform(enemy, platform);
+                break; // Only move once per enemy
+              }
+            }
+          }
+        }
+
+        moveEnemyAwayFromPlatform(enemy, platform) {
+          // Try to find a better position for the enemy
+          const directions = [
+            { x: -200, y: 0 }, // Left
+            { x: 200, y: 0 }, // Right
+            { x: 0, y: -200 }, // Up
+            { x: 0, y: 200 }, // Down
+            { x: -150, y: -150 }, // Up-left
+            { x: 150, y: -150 }, // Up-right
+            { x: -150, y: 150 }, // Down-left
+            { x: 150, y: 150 }, // Down-right
+          ];
+
+          for (let direction of directions) {
+            const newX = enemy.x + direction.x;
+            const newY = enemy.y + direction.y;
+
+            // Check if new position is valid (within bounds and on a platform)
+            if (this.isValidEnemyPosition(newX, newY)) {
+              enemy.x = newX;
+              enemy.y = newY;
+              return; // Found a good position
+            }
+          }
+
+          // If no good position found, try to place enemy on a static platform
+          const staticPlatforms = this.children.entries.filter(
+            (platform) =>
+              !platform.movementType || platform.movementType === "static"
+          );
+
+          if (staticPlatforms.length > 0) {
+            const randomPlatform =
+              staticPlatforms[
+                Math.floor(Math.random() * staticPlatforms.length)
+              ];
+            enemy.x = randomPlatform.x + randomPlatform.width / 2;
+            enemy.y = randomPlatform.y - 48; // Above the platform
+          }
+        }
+
+        isValidEnemyPosition(x, y) {
+          // Check if position is within game bounds
+          if (
+            x < 50 ||
+            x > this.scene.cameras.main.width - 50 ||
+            y < 50 ||
+            y > this.scene.cameras.main.height - 50
+          ) {
+            return false;
+          }
+
+          // Check if position is too close to player start (15 tiles buffer)
+          const playerStartX = 3 * 96; // Convert tile to pixel (back to 3)
+          const playerStartY = (this.scene.mapSize.height / 96 - 2) * 96; // Convert tile to pixel
+          const startingPlatformLength = 10 * 96; // Starting platform length in pixels
+
+          // Check if enemy is on the same platform as player (starting platform)
+          if (
+            Math.abs(y - playerStartY) < 48 &&
+            x < playerStartX + startingPlatformLength
+          ) {
+            return false; // On starting platform
+          }
+
+          // Additional check: ensure enemy is not in the first 15 tiles horizontally
+          if (x < 15 * 96) {
+            // 15 tiles in pixels
+            return false; // Too close to start
+          }
+
+          const distanceFromPlayer = Math.sqrt(
+            Math.pow(x - playerStartX, 2) + Math.pow(y - playerStartY, 2)
+          );
+          const playerBufferZone = 12 * 96; // 12 tiles in pixels (increased from 8)
+          if (distanceFromPlayer < playerBufferZone) {
+            return false; // Too close to player start
+          }
+
+          // Check if there's a platform below the enemy
+          const platforms = this.children.entries;
+          for (let platform of platforms) {
+            if (
+              platform.y <= y + 48 &&
+              platform.y + platform.height >= y + 48 &&
+              platform.x <= x &&
+              platform.x + platform.width >= x
+            ) {
+              return true;
+            }
+          }
+
+          return false;
+        }
+      }
+
+      // ==================== OBJECTS (COLLECTIBLES) ====================
+      class ObjectClass extends Phaser.Physics.Arcade.Sprite {
+        constructor(scene, x, y, texture) {
+          super(scene, x, y, texture);
+          scene.add.existing(this);
+          scene.physics.add.existing(this);
+          this.scene = scene;
+          this._collecting = false;
+        }
+
+        get collecting() {
+          return this._collecting;
+        }
+
+        set collecting(collecting) {
+          this._collecting = collecting;
+        }
+
+        collect() {
+          if (this.collecting) return;
+          this.collecting = true;
+
+          this.scene.tweens.add({
+            targets: this,
+            alpha: 0,
+            y: this.y - 50,
+            duration: 500,
+            ease: "Power2",
+            onComplete: () => this.destroy(),
+          });
+        }
+      }
+
+      class CoinSprite extends ObjectClass {
+        constructor(scene, x, y) {
+          super(scene, x, y, "coin");
+          this.setImmovable();
+          this.setScale(1.5);
+          this.body.setAllowGravity(false);
+          this.play("spincoin");
+        }
+      }
+
+      class KeySprite extends ObjectClass {
+        constructor(scene, x, y) {
+          super(scene, x, y, "key");
+          this.setImmovable();
+          this.setScale(0.7);
+          this.body.setAllowGravity(false);
+          this.play("spinkey");
+        }
+      }
+
+      class ObjectsGroup extends Phaser.GameObjects.Group {
+        constructor(scene, tilesConfig) {
+          super(scene);
+          let objectTypes = tilesConfig.filter(
+            (tile) => tile.type === "object"
+          );
+          let objects = [];
+
+          objectTypes.forEach((object) => {
+            switch (object.texture) {
+              case "coin":
+                objects.push(new CoinSprite(scene, object.x, object.y));
+                break;
+              case "key":
+                objects.push(new KeySprite(scene, object.x, object.y));
+                break;
+            }
+          });
+
+          this.addMultiple(objects);
+        }
+      }
+
+      // ==================== ENEMIES ====================
+      class EnemyClass extends Phaser.Physics.Arcade.Sprite {
+        constructor(scene, x, y, texture) {
+          super(scene, x, y, texture);
+          scene.add.existing(this);
+          scene.physics.add.existing(this);
+          this.scene = scene;
+          this._dead = false;
+        }
+
+        get dead() {
+          return this._dead;
+        }
+
+        set dead(dead) {
+          this._dead = dead;
+        }
+
+        removeEnemy(frame) {
+          this.dead = true;
+          this.anims.stop();
+          this.setFrame(frame);
+          this.body.setVelocityX(0);
+
+          this.scene.tweens.add({
+            targets: this,
+            delay: 2000,
+            duration: 600,
+            alpha: 0,
+            onComplete: () => this.destroy(),
+          });
+        }
+      }
+
+      class BeeSprite extends EnemyClass {
+        constructor(scene, x, y) {
+          super(scene, x, y, "bee");
+          this.play("fly");
+          this.body.setVelocityX(-120);
+          this.setOrigin(0.5, 1);
+          this.body.setSize(80, 135);
+          this.body.setOffset((this.width - 80) / 2, 30);
+        }
+
+        update() {}
+
+        kill() {
+          if (this.dead) return;
+          this.body.setSize(80, 40);
+          this.removeEnemy(18);
+        }
+      }
+
+      class SlimeSprite extends EnemyClass {
+        constructor(scene, x, y) {
+          super(scene, x, y, "slime");
+          this.play("crawl");
+          this.body.setVelocityX(-60);
+          this.setOrigin(0.5, 1);
+          this.setScale(1);
+          this.body.setSize(this.width - 10, this.height - 20);
+          this.body.setOffset(5, 20);
+        }
+
+        update() {}
+
+        kill() {
+          if (this.dead) return;
+          this.removeEnemy(20);
+        }
+      }
+
+      class EnemiesGroup extends Phaser.GameObjects.Group {
+        constructor(scene, tilesConfig) {
+          super(scene);
+          this.TILE_SIZE = 96;
+          this.tiles = tilesConfig.filter((tile) => tile.type === "tile");
+          let enemyTypes = tilesConfig.filter((tile) => tile.type === "enemy");
+
+          let enemies = [];
+          enemyTypes.forEach((enemy) => {
+            switch (enemy.texture) {
+              case "bee":
+                enemies.push(new BeeSprite(scene, enemy.x, enemy.y));
+                break;
+              case "slime":
+                enemies.push(new SlimeSprite(scene, enemy.x, enemy.y));
+                break;
+            }
+          });
+          this.addMultiple(enemies);
+        }
+
+        update() {
+          this.children.iterate((enemy) => {
+            if (enemy.dead) return;
+
+            let enemyIsMovingRight = enemy.body.velocity.x >= 0;
+
+            // Use Phaser's physics collision detection instead of static positions
+            // Check if enemy is touching ground (platform) from below
+            if (enemy.body.blocked.down) {
+              // Enemy is on ground, check if there's a platform ahead
+              let hasPlatformAhead = false;
+
+              // Check a small area ahead of the enemy for platforms
+              const checkX = enemyIsMovingRight
+                ? enemy.body.right + 10
+                : enemy.body.left - 10;
+              const checkY = enemy.body.bottom + 20;
+
+              // Use the tiles group to check for platforms ahead
+              // This is more reliable than accessing physics world directly
+              this.scene.tiles.children.iterate((platform) => {
+                if (platform && platform !== enemy) {
+                  const platformBounds = platform.getBounds();
+                  if (
+                    checkX >= platformBounds.x &&
+                    checkX <= platformBounds.x + platformBounds.width &&
+                    checkY >= platformBounds.y &&
+                    checkY <= platformBounds.y + platformBounds.height
+                  ) {
+                    hasPlatformAhead = true;
+                    return false; // Stop iteration
+                  }
+                }
+                return true; // Continue iteration
+              });
+
+              if (!hasPlatformAhead) {
+                enemy.body.setVelocityX(enemy.body.velocity.x * -1);
+                enemy.setFlipX(!enemyIsMovingRight);
+              }
+            }
+          }, null);
+        }
+      }
+
+      // ==================== PLAYER ====================
+      class PlatformerPlayer extends Phaser.Physics.Arcade.Sprite {
+        constructor(scene, player, mapSize, level, characterSprite) {
+          super(scene, player.x, player.y, characterSprite);
+          scene.add.existing(this);
+          scene.physics.add.existing(this);
+
+          this.scene = scene;
+          this.mapSize = mapSize;
+          this._dead = false;
+          this._halt = false;
+          this.isInvulnerable = false;
+
+          // Platform following tracking
+          this.lastPlatformX = null;
+          this.lastPlatformY = null;
+
+          this.setOrigin(0.5, 1);
+          this.setDragX(1500);
+          this.setScale(1.2);
+          this.body.setSize(70, 100);
+          // this.body.setOffset(15, 28);
+
+          // Play idle animation by default
+          this.play(scene.getCharacterIdleKey(), true);
+        }
+
+        kill() {
+          if (this._dead) return;
+          this._dead = true;
+
+          playSound(this.scene, "FailFx", { volume: 0.4 });
+          this.scene.cameras.main.shake(500, 0.025);
+
+          this.scene.time.addEvent({
+            delay: 500,
+            callback: () => this.scene.gameOver(),
+          });
+        }
+
+        killEnemy() {
+          // Higher bounce to avoid landing on stacked enemies
+          this.setVelocityY(-1300);
+
+          // Brief invulnerability to prevent instant death from stacked enemies
+          this.isInvulnerable = true;
+          this.scene.time.delayedCall(300, () => {
+            this.isInvulnerable = false;
+          });
+        }
+
+        halt() {
+          this.body.enable = false;
+          this._halt = true;
+        }
+
+        update(cursors, controls, wasdKeys) {
+          if (this._halt || this._dead) return;
+
+          if (
+            this.body.right < this.mapSize.x ||
+            this.body.left > this.mapSize.width ||
+            this.body.top > this.mapSize.height
+          )
+            this.kill();
+
+          // Horizontal movement
+          if (
+            cursors.left.isDown ||
+            controls.leftIsDown ||
+            (wasdKeys && wasdKeys.left.isDown)
+          ) {
+            this.setVelocityX(-500);
+            this.setFlipX(true);
+          } else if (
+            cursors.right.isDown ||
+            controls.rightIsDown ||
+            (wasdKeys && wasdKeys.right.isDown)
+          ) {
+            this.setVelocityX(550);
+            this.setFlipX(false);
+          }
+
+          // Jump
+          if (
+            (cursors.up.isDown ||
+              cursors.space.isDown ||
+              controls.upIsDown ||
+              (wasdKeys && wasdKeys.up.isDown)) &&
+            this.body.blocked.down
+          ) {
+            this.setVelocityY(-1550);
+          }
+
+          // Down movement (pass through platforms)
+          if (
+            cursors.down.isDown ||
+            controls.downIsDown ||
+            (wasdKeys && wasdKeys.down.isDown)
+          ) {
+            this.passThroughPlatforms();
+          }
+
+          // Follow moving platforms
+          this.followMovingPlatforms();
+
+          // Update animations based on movement state
+          if (this.body.blocked.down) {
+            if (Math.abs(this.body.velocity.x) >= 10) {
+              // Moving - play walk animation
+              this.play(this.scene.getCharacterWalkKey(), true);
+            } else {
+              // Standing still - play idle animation
+              this.play(this.scene.getCharacterIdleKey(), true);
+            }
+          } else {
+            // In air - play walk animation (no jump animation available)
+            this.play(this.scene.getCharacterWalkKey(), true);
+          }
+        }
+
+        followMovingPlatforms() {
+          if (!this.body.blocked.down) {
+            // Reset platform tracking if not on ground
+            this.lastPlatformX = null;
+            this.lastPlatformY = null;
+            return;
+          }
+
+          // Check if player is standing on a moving platform
+          const platforms = this.scene.tiles.children.entries;
+          for (let platform of platforms) {
+            if (platform.movementType && platform.movementType !== "static") {
+              // Check if player is on top of this platform
+              const playerBottom = this.body.bottom;
+              const platformTop = platform.y;
+              const playerLeft = this.body.left;
+              const playerRight = this.body.right;
+              const platformLeft = platform.x;
+              const platformRight = platform.x + platform.width;
+
+              // Check if player is standing on the platform
+              if (
+                Math.abs(playerBottom - platformTop) < 15 && // Slightly larger tolerance
+                playerRight > platformLeft && // Player overlaps platform horizontally
+                playerLeft < platformRight
+              ) {
+                // Store platform position for next frame if not already stored
+                if (!this.lastPlatformX) {
+                  this.lastPlatformX = platform.x;
+                  this.lastPlatformY = platform.y;
+                  return;
+                }
+
+                // Calculate platform movement delta
+                const deltaX = platform.x - this.lastPlatformX;
+                const deltaY = platform.y - this.lastPlatformY;
+
+                // Clamp delta values to prevent extreme movements
+                const maxDelta = 5; // Maximum pixels per frame
+                const clampedDeltaX = Math.max(
+                  -maxDelta,
+                  Math.min(maxDelta, deltaX)
+                );
+                const clampedDeltaY = Math.max(
+                  -maxDelta,
+                  Math.min(maxDelta, deltaY)
+                );
+
+                // Move player by the clamped delta
+                this.x += clampedDeltaX;
+                this.y += clampedDeltaY;
+
+                // Only apply velocity if the delta is reasonable
+                if (
+                  Math.abs(clampedDeltaX) < 3 &&
+                  Math.abs(clampedDeltaY) < 3
+                ) {
+                  // Convert delta to velocity (delta per frame * 60 FPS)
+                  const platformVelocityX = clampedDeltaX * 60;
+                  const platformVelocityY = clampedDeltaY * 60;
+
+                  // Only apply platform velocity if player is idle (not actively moving)
+                  if (Math.abs(this.body.velocity.x) < 50) {
+                    // Player is idle - match platform velocity exactly
+                    this.body.setVelocityX(platformVelocityX);
+                  }
+
+                  // Only apply vertical velocity if it's not too extreme
+                  if (Math.abs(platformVelocityY) < 200) {
+                    this.body.setVelocityY(platformVelocityY);
+                  }
+                }
+
+                // Update stored platform position
+                this.lastPlatformX = platform.x;
+                this.lastPlatformY = platform.y;
+                break; // Only follow one platform at a time
+              }
+            }
+          }
+
+          // Reset platform tracking if not on a platform
+          this.lastPlatformX = null;
+          this.lastPlatformY = null;
+        }
+
+        passThroughPlatforms() {
+          // Temporarily disable collision with platforms to allow passing through
+          if (this.body.blocked.down) {
+            // Move player down slightly to pass through platform
+            this.y += 2;
+
+            // Temporarily disable platform collision
+            this.body.checkCollision.down = false;
+
+            // Re-enable collision after a short delay
+            this.scene.time.delayedCall(200, () => {
+              this.body.checkCollision.down = true;
+            });
+          }
+        }
+      }
+
+      // ==================== GOAL ====================
+      class GoalSprite extends Phaser.Physics.Arcade.Sprite {
+        constructor(scene, tilesConfig) {
+          super(scene, tilesConfig.x, tilesConfig.y + 4, "goal");
+          scene.add.existing(this);
+          scene.physics.add.existing(this);
+          this.setScale(2);
+          this.setImmovable(true);
+          this.body.setAllowGravity(false);
+          this.setOrigin(0.5, 0.5);
+          this._loadNextLevel = false;
+        }
+
+        get loadNextLevel() {
+          return this._loadNextLevel;
+        }
+
+        nextLevel(scene) {
+          if (this._loadNextLevel) return;
+          this._loadNextLevel = true;
+
+          playSound(scene, "PowerupFx", { volume: 0.5 });
+
+          // Immediately show completion screen (no fade)
+          scene.completeLevel();
+        }
+      }
+
+      // ==================== TOUCH CONTROLS ====================
+      class PlatformerControls {
+        constructor(scene) {
+          this.scene = scene;
+          this.leftIsDown = false;
+          this.rightIsDown = false;
+          this.upIsDown = false;
+          this.downIsDown = false;
+          //this.isMobile = this.detectMobile();
+          this.isMobile = true; // for testing
+
+          if (this.isMobile) {
+            this.setupMobileControls();
+          }
+        }
+
+        detectMobile() {
+          return (
+            /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(
+              navigator.userAgent
+            ) ||
+            "ontouchstart" in window ||
+            navigator.maxTouchPoints > 0
+          );
+        }
+
+        setupMobileControls() {
+          // Mobile controls will be shown/hidden by scenes
+          this.mobileControls = document.getElementById("mobile-controls");
+
+          // Add touch event listeners
+          const leftBtn = document.getElementById("mobile-left");
+          const rightBtn = document.getElementById("mobile-right");
+          const downBtn = document.getElementById("mobile-down");
+          const jumpBtn = document.getElementById("mobile-jump");
+
+          if (leftBtn) {
+            leftBtn.addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.leftIsDown = true;
+            });
+            leftBtn.addEventListener("touchend", (e) => {
+              e.preventDefault();
+              this.leftIsDown = false;
+            });
+            leftBtn.addEventListener("mousedown", (e) => {
+              e.preventDefault();
+              this.leftIsDown = true;
+            });
+            leftBtn.addEventListener("mouseup", (e) => {
+              e.preventDefault();
+              this.leftIsDown = false;
+            });
+          }
+
+          if (rightBtn) {
+            rightBtn.addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.rightIsDown = true;
+            });
+            rightBtn.addEventListener("touchend", (e) => {
+              e.preventDefault();
+              this.rightIsDown = false;
+            });
+            rightBtn.addEventListener("mousedown", (e) => {
+              e.preventDefault();
+              this.rightIsDown = true;
+            });
+            rightBtn.addEventListener("mouseup", (e) => {
+              e.preventDefault();
+              this.rightIsDown = false;
+            });
+          }
+
+          if (downBtn) {
+            downBtn.addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.downIsDown = true;
+            });
+            downBtn.addEventListener("touchend", (e) => {
+              e.preventDefault();
+              this.downIsDown = false;
+            });
+            downBtn.addEventListener("mousedown", (e) => {
+              e.preventDefault();
+              this.downIsDown = true;
+            });
+            downBtn.addEventListener("mouseup", (e) => {
+              e.preventDefault();
+              this.downIsDown = false;
+            });
+          }
+
+          if (jumpBtn) {
+            jumpBtn.addEventListener("touchstart", (e) => {
+              e.preventDefault();
+              this.upIsDown = true;
+            });
+            jumpBtn.addEventListener("touchend", (e) => {
+              e.preventDefault();
+              this.upIsDown = false;
+            });
+            jumpBtn.addEventListener("mousedown", (e) => {
+              e.preventDefault();
+              this.upIsDown = true;
+            });
+            jumpBtn.addEventListener("mouseup", (e) => {
+              e.preventDefault();
+              this.upIsDown = false;
+            });
+          }
+        }
+
+        show() {
+          if (this.isMobile && this.mobileControls) {
+            this.mobileControls.classList.add("active");
+          }
+        }
+
+        hide() {
+          if (this.isMobile && this.mobileControls) {
+            this.mobileControls.classList.remove("active");
+          }
+        }
+
+        update() {
+          // Reset states (they'll be set by touch events if mobile)
+          if (!this.isMobile) {
+            this.leftIsDown = false;
+            this.rightIsDown = false;
+            this.upIsDown = false;
+            this.downIsDown = false;
+
+            // Simple touch zone detection for non-mobile touch devices
+            const pointer = this.scene.input.activePointer;
+            if (pointer.isDown) {
+              const x = pointer.x;
+              const y = pointer.y;
+              const width = this.scene.cameras.main.width;
+              const height = this.scene.cameras.main.height;
+
+              // Left third = left
+              if (x < width / 3 && y > height / 2) {
+                this.leftIsDown = true;
+              }
+              // Middle third bottom = jump
+              else if (
+                x >= width / 3 &&
+                x < (2 * width) / 3 &&
+                y > height / 2
+              ) {
+                this.upIsDown = true;
+              }
+              // Right third = right
+              else if (x >= (2 * width) / 3 && y > height / 2) {
+                this.rightIsDown = true;
+              }
+              // Top half = down (for passing through platforms)
+              else if (y < height / 2) {
+                this.downIsDown = true;
+              }
+            }
+          }
+        }
+      }
+
+      class GameScene extends Phaser.Scene {
+        constructor() {
+          super({ key: "GameScene" });
+          this.currentLevel = 1;
+          this.score = 0;
+          this.keys = 0;
+          this.selectedCharacter = "classic";
+          this.selectedLevel = 1;
+          this.levelTransitioning = false;
+          this.characters = [
+            { id: "classic", name: "CLASSIC PENGUIN", unlocked: true },
+            { id: "pirate", name: "PIRATE PENGUIN", unlocked: false },
+
+            { id: "aviator", name: "AVIATOR PENGUIN", unlocked: false },
+            { id: "viking", name: "VIKING PENGUIN", unlocked: false },
+            { id: "ninja", name: "NINJA PENGUIN", unlocked: false },
+          ];
+        }
+
+        init(data) {
+          // Receive data from hub scene
+          if (data) {
+            this.selectedCharacter = data.selectedCharacter || "classic";
+            this.selectedLevel = data.selectedLevel || 1;
+            this.currentLevel = this.selectedLevel;
+            // Use saved total score from gameData, not data.score
+            this.score = gameData.totalScore || 0;
+            this.keys = 0;
+          } else {
+            this.currentLevel = 1;
+            this.score = gameData.totalScore || 0;
+            this.keys = 0;
+          }
+
+          // Update characters array with current unlocked state
+          this.characters.forEach((character) => {
+            character.unlocked = gameData.unlockedCharacters.includes(
+              character.id
+            );
+          });
+
+          // Reset level transition state
+          this.levelTransitioning = false;
+        }
+
+        preload() {
+          // Assets already loaded in BootLoader
+        }
+
+        getCharacterSpriteKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "pudgyPenguin";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratePenguin";
+            case "ninja":
+              return "ninjaPenguin";
+            case "aviator":
+              return "aviatorPenguin";
+            case "viking":
+              return "vikingPenguin";
+            default:
+              return "pudgyPenguin";
+          }
+        }
+
+        getCharacterWalkKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "walk";
+
+          switch (character.id) {
+            case "pirate":
+              return "piratewalk";
+            case "ninja":
+              return "ninjawalk";
+            case "aviator":
+              return "aviatorwalk";
+            case "viking":
+              return "vikingwalk";
+            default:
+              return "walk";
+          }
+        }
+
+        getCharacterIdleKey() {
+          const character = this.characters.find(
+            (c) => c.id === this.selectedCharacter
+          );
+          if (!character) return "idle";
+
+          switch (character.id) {
+            case "pirate":
+              return "pirateidle";
+            case "ninja":
+              return "ninjaidle";
+            case "aviator":
+              return "aviatoridle";
+            case "viking":
+              return "vikingidle";
+            default:
+              return "idle";
+          }
+        }
+
+        getCharacterChargeKey() {
+          // Not used in platformer but keeping for compatibility
+          return this.getCharacterWalkKey();
+        }
+
+        create() {
+          this.cameras.main.fadeIn(500);
+          this.keyWarningShown = false;
+
+          // Show UI overlay in game scene
+          const uiOverlay = document.getElementById("ui-overlay");
+          if (uiOverlay) {
+            uiOverlay.style.display = "block";
+          }
+
+          // Update HTML UI
+          const isProcedural = this.currentLevel >= PlatformerLevels.length;
+          document.getElementById("level").textContent =
+            this.currentLevel + (isProcedural ? " ∞" : "");
+          document.getElementById("score").textContent = this.score;
+          document.getElementById("keys").textContent = this.keys;
+
+          // Show theme indicator
+          const theme = this.getLevelTheme();
+
+          // Start level music based on theme
+          this.startLevelMusic();
+
+          // Create map
+          const map = new PlatformerMap(this.currentLevel - 1);
+
+          // Setup physics
+          this.physics.world.setBounds(
+            map.size.x,
+            map.size.y,
+            map.size.width,
+            map.size.height
+          );
+          this.physics.world.setBoundsCollision(true, true, false, true);
+
+          // Create background layers with parallax scrolling
+          this.createBackgroundLayers(map);
+
+          // Get tiles and objects from map
+          const tiles = map.info.filter((tile) => tile.type === "tile");
+          const playerConfig = map.info.find((tile) => tile.type === "player");
+          const goalConfig = map.info.find((tile) => tile.type === "goal");
+
+          // Create game objects (theme already declared above)
+          this.tiles = new TilesGroup(
+            this,
+            tiles,
+            theme,
+            playerConfig,
+            goalConfig,
+            this.currentLevel
+          );
+          this.objects = new ObjectsGroup(this, map.info);
+          this.enemies = new EnemiesGroup(this, map.info);
+
+          // Fix enemy placement to avoid moving platforms
+          this.tiles.fixEnemyPlacement();
+          this.player = new PlatformerPlayer(
+            this,
+            playerConfig,
+            map.size,
+            this.currentLevel,
+            this.getCharacterSpriteKey()
+          );
+          this.goal = new GoalSprite(this, goalConfig);
+
+          // Setup camera bounds and following
+          this.cameras.main.setBounds(
+            map.size.x,
+            map.size.y,
+            map.size.width,
+            map.size.height
+          );
+          this.cameras.main.startFollow(this.player, true, 0.1, 0.1);
+          this.cameras.main.zoom = 0.45;
+
+          // Setup controls
+          this.cursors = this.input.keyboard.createCursorKeys();
+          this.cursors.space = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+          );
+
+          // Add WASD controls
+          this.wasdKeys = {
+            left: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.A),
+            right: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+            up: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.W),
+            down: this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.S),
+          };
+
+          this.controls = new PlatformerControls(this);
+
+          // Show mobile controls for gameplay
+          this.controls.show();
+
+          // Setup collisions
+          this.physics.add.collider(this.player, this.tiles);
+          this.physics.add.collider(this.enemies, this.tiles);
+
+          // Player collects objects
+          this.physics.add.overlap(
+            this.player,
+            this.objects,
+            (player, object) => {
+              // Check if already collecting to prevent duplicate collection
+              if (object.collecting) return;
+
+              if (object.texture.key === "coin") {
+                this.score += 10;
+                this.showFloatingScore(object.x, object.y - 100, 10, "#ffd700"); // Gold color for coins
+                playSound(this, "PowerupFx", { volume: 0.3 });
+              } else if (object.texture.key === "key") {
+                this.keys += 1;
+                this.showFloatingScore(
+                  object.x,
+                  object.y - 100,
+                  "KEY",
+                  "#ffd700"
+                );
+                playSound(this, "PowerupFx", { volume: 0.5 });
+              }
+              object.collect();
+              document.getElementById("score").textContent = this.score;
+              document.getElementById("keys").textContent = this.keys;
+            }
+          );
+
+          // Player hits enemies (from top)
+          this.physics.add.overlap(
+            this.player,
+            this.enemies,
+            (player, enemy) => {
+              if (enemy.dead) return;
+
+              if (
+                player.body.velocity.y > 0 &&
+                player.body.bottom < enemy.body.center.y
+              ) {
+                // Player jumped on enemy
+                enemy.kill();
+                player.killEnemy();
+                this.score += 25;
+                this.showFloatingScore(enemy.x, enemy.y - 100, 25, "#ffd700");
+                playSound(this, "HitFx", { volume: 0.4 });
+                document.getElementById("score").textContent = this.score;
+              } else {
+                // Player got hit by enemy (unless invulnerable)
+                if (!player.isInvulnerable) {
+                  player.kill();
+                }
+              }
+            }
+          );
+
+          // Player reaches goal
+          this.physics.add.overlap(this.player, this.goal, () => {
+            if (!this.goal.loadNextLevel) {
+              // Check if player has collected a key
+              if (this.keys > 0) {
+                this.player.halt();
+                this.goal.nextLevel(this);
+              } else {
+                // Show message that key is needed
+                if (!this.keyWarningShown) {
+                  this.keyWarningShown = true;
+
+                  // Create key image
+                  const keyImage = this.add.image(
+                    this.player.x - 60,
+                    this.player.y - 100,
+                    "key"
+                  );
+                  keyImage.setScale(0.3);
+                  keyImage.setDepth(1000);
+
+                  const warningText = this.add
+                    .text(this.player.x, this.player.y - 100, "FIND A KEY!", {
+                      fontFamily: "Fobble",
+                      fontSize: "96px",
+                      fill: "#FF0000",
+                      stroke: "#000000",
+                      strokeThickness: 4,
+                    })
+                    .setOrigin(0.5);
+
+                  this.tweens.add({
+                    targets: [warningText, keyImage],
+                    y: warningText.y - 50,
+                    alpha: 0,
+                    duration: 2000,
+                    onComplete: () => {
+                      warningText.destroy();
+                      keyImage.destroy();
+                      this.keyWarningShown = false;
+                    },
+                  });
+                }
+              }
+            }
+          });
+        }
+
+        update() {
+          if (!this.player || this.player._dead) return;
+
+          this.controls.update();
+          this.player.update(this.cursors, this.controls, this.wasdKeys);
+          this.enemies.update();
+
+          // Update background parallax scrolling
+          this.updateBackgroundLayers();
+        }
+
+        gameOver() {
+          // Stop level music
+          if (this.levelMusic) {
+            this.levelMusic.stop();
+          }
+
+          // Hide mobile controls
+          if (this.controls) {
+            this.controls.hide();
+          }
+
+          // Save progress
+          gameData.saveHighestLevel(this.currentLevel);
+          const finalScore = this.score;
+          // Reset score to 0 on game over
+          this.score = 0;
+          gameData.resetTotalScore();
+
+          // Submit current score
+          if (window.FarcadeSDK) {
+            window.FarcadeSDK.singlePlayer.actions.gameOver({
+              score: finalScore,
+            });
+          }
+
+          // Return to hub
+          this.cameras.main.fadeOut(500);
+          this.time.delayedCall(500, () => {
+            this.scene.start("HubScene");
+          });
+        }
+
+        completeLevel() {
+          if (this.levelTransitioning) return;
+          this.levelTransitioning = true;
+
+          // Check what will be unlocked before actually unlocking
+          const newlyUnlockedCharacters = this.checkNewUnlocks();
+
+          // Now actually unlock the characters
+          this.unlockCharactersBasedOnPerformance();
+
+          // Unlock next level
+          const nextLevel = this.currentLevel + 1;
+          if (nextLevel > gameData.highestLevel) {
+            gameData.saveHighestLevel(nextLevel);
+          }
+
+          // Save progress
+          gameData.saveTotalScore(this.score);
+          gameData.saveGameState();
+
+          // Show completion screen
+          this.showLevelCompletion(newlyUnlockedCharacters, nextLevel);
+        }
+
+        checkNewUnlocks() {
+          const newlyUnlockedCharacters = [];
+
+          // Check each unlock condition
+          if (
+            this.currentLevel >= 2 &&
+            !gameData.unlockedCharacters.includes("pirate")
+          ) {
+            newlyUnlockedCharacters.push("pirate");
+          }
+          if (
+            this.currentLevel >= 3 &&
+            !gameData.unlockedCharacters.includes("aviator")
+          ) {
+            newlyUnlockedCharacters.push("aviator");
+          }
+          if (
+            this.currentLevel >= 4 &&
+            !gameData.unlockedCharacters.includes("viking")
+          ) {
+            newlyUnlockedCharacters.push("viking");
+          }
+          if (
+            this.currentLevel >= 5 &&
+            !gameData.unlockedCharacters.includes("ninja")
+          ) {
+            newlyUnlockedCharacters.push("ninja");
+          }
+
+          return newlyUnlockedCharacters;
+        }
+
+        unlockCharactersBasedOnPerformance() {
+          // Unlock characters based on level reached
+          if (this.currentLevel >= 2) {
+            gameData.unlockCharacter("pirate");
+          }
+          if (this.currentLevel >= 3) {
+            gameData.unlockCharacter("aviator");
+          }
+          if (this.currentLevel >= 4) {
+            gameData.unlockCharacter("viking");
+          }
+          if (this.currentLevel >= 5) {
+            gameData.unlockCharacter("ninja");
+          }
+        }
+
+        getLatestUnlockedCharacter() {
+          // Return the last unlocked character, or classic if none unlocked
+          const unlockedCharacters = this.characters.filter(
+            (char) => char.unlocked
+          );
+          if (unlockedCharacters.length > 0) {
+            return unlockedCharacters[unlockedCharacters.length - 1].id;
+          }
+          return "classic";
+        }
+
+        showFloatingScore(x, y, score, color = "#ffffff") {
+          // Create floating score text
+          const floatingText = this.add.text(x, y, `+${score}`, {
+            fontFamily: "Fobble",
+            fontSize: "102px",
+            fill: color,
+            stroke: "#000000",
+            strokeThickness: 2,
+            align: "center",
+          });
+
+          floatingText.setOrigin(0.5, 0.5);
+          floatingText.setDepth(1000); // Above everything else
+
+          // Animate the floating text
+          this.tweens.add({
+            targets: floatingText,
+            y: y - 60, // Move up
+            alpha: 0, // Fade out
+            duration: 1500,
+            ease: "Power2",
+            onComplete: () => {
+              floatingText.destroy();
+            },
+          });
+
+          // Add a slight horizontal drift
+          this.tweens.add({
+            targets: floatingText,
+            x: x + Phaser.Math.Between(-20, 20),
+            duration: 1500,
+            ease: "Sine.easeInOut",
+          });
+        }
+
+        showLevelCompletion(newlyUnlockedCharacters, nextLevel) {
+          // Hide player
+          if (this.player) {
+            this.player.setVisible(false);
+          }
+
+          this.controls.hide();
+
+          // Create expanding blue circle transition
+          const expandingCircle = this.add.circle(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            1,
+            0x477dfd,
+            1
+          );
+          expandingCircle.setScrollFactor(0);
+          expandingCircle.setDepth(1000);
+
+          this.time.delayedCall(600, () => {
+            this.tweens.add({
+              targets: this.cameras.main,
+              zoom: 1,
+              duration: 200,
+              ease: "Power2.easeOut",
+            });
+          });
+
+          // Animate circle expansion
+          this.tweens.add({
+            targets: expandingCircle,
+            radius:
+              Math.max(this.cameras.main.width, this.cameras.main.height) * 0.8,
+            duration: 600,
+            ease: "Power2.easeOut",
+            onComplete: () => {
+              // Check if we have newly unlocked characters
+              if (
+                newlyUnlockedCharacters &&
+                newlyUnlockedCharacters.length > 0
+              ) {
+                // Show new character walking instead of winner
+                this.showNewCharacterUnlock(newlyUnlockedCharacters, nextLevel);
+              } else {
+                // Show normal winner animation
+                this.showWinnerAnimation(nextLevel);
+              }
+            },
+          });
+        }
+
+        showNewCharacterUnlock(newlyUnlockedCharacters, nextLevel) {
+          // Stop level music and play victory music
+          if (this.levelMusic) {
+            this.tweens.add({
+              targets: this.levelMusic,
+              volume: 0,
+              duration: 1000,
+              ease: "Power2.easeOut",
+              onComplete: () => {
+                this.levelMusic.stop();
+              },
+            });
+          }
+
+          playSound(this, "VictoryMusic", { volume: 0.4 });
+
+          // Create celebration particles for character unlock
+          this.createParticleExplosion(
+            this.cameras.main.centerX,
+            this.cameras.main.centerY,
+            0xff6b6b,
+            25,
+            100,
+            200,
+            2000
+          );
+
+          // Get the first newly unlocked character
+          const newCharacterId = newlyUnlockedCharacters[0];
+          const character = this.characters.find(
+            (c) => c.id === newCharacterId
+          );
+
+          if (!character) {
+            // Fallback to winner animation if character not found
+            this.showWinnerAnimation(nextLevel);
+            return;
+          }
+
+          // Create new character sprite
+          const newCharacter = this.add
+            .sprite(
+              this.cameras.main.centerX,
+              this.cameras.main.centerY,
+              this.getCharacterSpriteKeyForId(newCharacterId)
+            )
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setScrollFactor(0)
+            .setDepth(1020);
+
+          // Create "NEW CHARACTER UNLOCKED!" text
+          const unlockText = this.add
+            .text(
+              this.cameras.main.centerX,
+              this.cameras.main.centerY - 110,
+              "NEW CHARACTER UNLOCKED!",
+              {
+                fontFamily: "Fobble",
+                fontSize: "32px",
+                fill: "#ffd700",
+                stroke: "#000000",
+                strokeThickness: 4,
+                align: "center",
+              }
+            )
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setScrollFactor(0)
+            .setDepth(1025);
+
+          // Create character name text
+          const characterNameText = this.add
+            .text(
+              this.cameras.main.centerX,
+              this.cameras.main.centerY + 90,
+              character.name,
+              {
+                fontFamily: "Fobble",
+                fontSize: "24px",
+                fill: "#ffffff",
+                stroke: "#000000",
+                strokeThickness: 3,
+                align: "center",
+              }
+            )
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setScrollFactor(0)
+            .setDepth(1025);
+
+          // Animate character entrance
+          this.tweens.add({
+            targets: newCharacter,
+            scale: 1.2,
+            alpha: 1,
+            duration: 800,
+            ease: "Back.easeOut",
+            onComplete: () => {
+              // Start walking animation
+              newCharacter.play(this.getCharacterWalkKeyForId(newCharacterId));
+
+              // Scale down to normal size
+              this.tweens.add({
+                targets: newCharacter,
+                scale: 1.0,
+                duration: 300,
+                ease: "Power2.easeOut",
+              });
+            },
+          });
+
+          // Animate text entrance
+          this.tweens.add({
+            targets: [unlockText, characterNameText],
+            scale: 1,
+            alpha: 1,
+            duration: 600,
+            delay: 400,
+            ease: "Back.easeOut",
+          });
+
+          // Show completion buttons after animation
+          this.time.delayedCall(1600, () => {
+            this.showCompletionButtons(nextLevel);
+          });
+        }
+
+        showWinnerAnimation(nextLevel) {
+          // Stop level music and play victory music
+          if (this.levelMusic) {
+            this.tweens.add({
+              targets: this.levelMusic,
+              volume: 0,
+              duration: 1000,
+              ease: "Power2.easeOut",
+              onComplete: () => {
+                this.levelMusic.stop();
+              },
+            });
+          }
+
+          playSound(this, "VictoryMusic", { volume: 0.4 });
+
+          // Winner animation in the center
+          const winner = this.add
+            .sprite(
+              this.cameras.main.centerX,
+              this.cameras.main.centerY,
+              "winner"
+            )
+            .setOrigin(0.5)
+            .setScale(0)
+            .setAlpha(0)
+            .setScrollFactor(0)
+            .setDepth(1020);
+
+          // Animate winner sprite with dramatic entrance
+          this.tweens.add({
+            targets: winner,
+            scale: 1.2,
+            alpha: 1,
+            duration: 800,
+            ease: "Back.easeOut",
+            onComplete: () => {
+              winner.play("win");
+
+              // Scale down to normal size
+              this.tweens.add({
+                targets: winner,
+                scale: 1.0,
+                duration: 300,
+                ease: "Power2.easeOut",
+              });
+
+              // Show completion buttons after winner animation
+              this.time.delayedCall(1500, () => {
+                this.showCompletionButtons(nextLevel);
+              });
+            },
+          });
+        }
+
+        showCompletionButtons(nextLevel) {
+          // Hub button
+          const hubButton = this.add
+            .text(
+              this.cameras.main.centerX - 80,
+              this.cameras.main.centerY + 140,
+              "HUB",
+              {
+                fontFamily: "Fobble",
+                fontSize: "32px",
+                fill: "#ffa3ff",
+                stroke: "#000000",
+                strokeThickness: 3,
+                align: "center",
+              }
+            )
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(1060)
+            .setScale(0)
+            .setAlpha(0)
+            .setInteractive({ useHandCursor: true })
+            .on("pointerdown", () => {
+              playSound(this, "ClickFx", { volume: 0.5 });
+              // Hide mobile controls
+              if (this.controls) {
+                this.controls.hide();
+              }
+              // Save current score when returning to hub
+              gameData.saveTotalScore(this.score);
+              this.cameras.main.fadeOut(500);
+              this.time.delayedCall(500, () => {
+                this.scene.start("HubScene");
+              });
+            });
+
+          // Next level button
+          const nextLevelButton = this.add
+            .text(
+              this.cameras.main.centerX + 80,
+              this.cameras.main.centerY + 140,
+              `LEVEL ${nextLevel}`,
+              {
+                fontFamily: "Fobble",
+                fontSize: "32px",
+                fill: "#a9ff99",
+                stroke: "#000000",
+                strokeThickness: 3,
+                align: "center",
+              }
+            )
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(1060)
+            .setScale(0)
+            .setAlpha(0)
+            .setInteractive({ useHandCursor: true })
+            .on("pointerdown", () => {
+              playSound(this, "ClickFx", { volume: 0.5 });
+              // Stop victory music before transitioning
+              if (this.sound && this.sound.get("VictoryMusic")) {
+                this.sound.get("VictoryMusic").stop();
+              }
+              this.cameras.main.fadeOut(500);
+              this.time.delayedCall(500, () => {
+                // Update characters array with current unlocked state before getting latest
+                this.characters.forEach((character) => {
+                  character.unlocked = gameData.unlockedCharacters.includes(
+                    character.id
+                  );
+                });
+                // Auto-select latest unlocked character for next level
+                const latestCharacter = this.getLatestUnlockedCharacter();
+                this.scene.start("GameScene", {
+                  selectedCharacter: latestCharacter,
+                  selectedLevel: nextLevel,
+                });
+              });
+            });
+
+          // Left arrow for HUB button
+          const leftArrow = this.add
+            .text(
+              this.cameras.main.centerX - 125,
+              this.cameras.main.centerY + 142,
+              "◄",
+              {
+                fontSize: "32px",
+                fill: "#ffa3ff",
+                stroke: "#000000",
+                strokeThickness: 3,
+                align: "center",
+              }
+            )
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(1060)
+            .setScale(0)
+            .setAlpha(0)
+            .setInteractive({ useHandCursor: true })
+            .on("pointerdown", () => {
+              playSound(this, "ClickFx", { volume: 0.5 });
+              // Hide mobile controls
+              if (this.controls) {
+                this.controls.hide();
+              }
+              // Save current score when returning to hub
+              gameData.saveTotalScore(this.score);
+              this.cameras.main.fadeOut(500);
+              this.time.delayedCall(500, () => {
+                this.scene.start("HubScene");
+              });
+            });
+
+          // Right arrow for LEVEL button
+          const rightArrow = this.add
+            .text(
+              this.cameras.main.centerX + 140,
+              this.cameras.main.centerY + 142,
+              "►",
+              {
+                fontSize: "32px",
+                fill: "#a9ff99",
+                stroke: "#000000",
+                strokeThickness: 3,
+                align: "center",
+              }
+            )
+            .setOrigin(0.5)
+            .setScrollFactor(0)
+            .setDepth(1060)
+            .setScale(0)
+            .setAlpha(0)
+            .setInteractive({ useHandCursor: true })
+            .on("pointerdown", () => {
+              playSound(this, "ClickFx", { volume: 0.5 });
+              // Stop victory music before transitioning
+              if (this.sound && this.sound.get("VictoryMusic")) {
+                this.sound.get("VictoryMusic").stop();
+              }
+              this.cameras.main.fadeOut(500);
+              this.time.delayedCall(500, () => {
+                // Update characters array with current unlocked state before getting latest
+                this.characters.forEach((character) => {
+                  character.unlocked = gameData.unlockedCharacters.includes(
+                    character.id
+                  );
+                });
+                // Auto-select latest unlocked character for next level
+                const latestCharacter = this.getLatestUnlockedCharacter();
+                this.scene.start("GameScene", {
+                  selectedCharacter: latestCharacter,
+                  selectedLevel: nextLevel,
+                });
+              });
+            });
+
+          // Pop-in animation for both buttons and arrows
+          this.tweens.add({
+            targets: [hubButton, nextLevelButton, leftArrow, rightArrow],
+            scale: 1,
+            alpha: 1,
+            duration: 600,
+            ease: "Back.easeOut",
+            delay: 200,
+            onComplete: () => {
+              // Add bobbing animation to both buttons and arrows
+              this.tweens.add({
+                targets: hubButton,
+                y: hubButton.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+
+              this.tweens.add({
+                targets: nextLevelButton,
+                y: nextLevelButton.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+
+              this.tweens.add({
+                targets: leftArrow,
+                y: leftArrow.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+
+              this.tweens.add({
+                targets: rightArrow,
+                y: rightArrow.y - 3,
+                duration: 1000,
+                ease: "Sine.easeInOut",
+                yoyo: true,
+                repeat: -1,
+              });
+
+              // Add keyboard support for completion screen
+              this.setupCompletionKeyboard(nextLevel);
+            },
+          });
+        }
+
+        setupCompletionKeyboard(nextLevel) {
+          // Create a one-time spacebar listener for next level
+          const spaceKey = this.input.keyboard.addKey(
+            Phaser.Input.Keyboard.KeyCodes.SPACE
+          );
+
+          const handleSpace = () => {
+            playSound(this, "ClickFx", { volume: 0.5 });
+            // Stop victory music before transitioning
+            if (this.sound && this.sound.get("VictoryMusic")) {
+              this.sound.get("VictoryMusic").stop();
+            }
+            this.cameras.main.fadeOut(500);
+            this.time.delayedCall(500, () => {
+              // Update characters array with current unlocked state before getting latest
+              this.characters.forEach((character) => {
+                character.unlocked = gameData.unlockedCharacters.includes(
+                  character.id
+                );
+              });
+              // Auto-select latest unlocked character for next level
+              const latestCharacter = this.getLatestUnlockedCharacter();
+              this.scene.start("GameScene", {
+                selectedCharacter: latestCharacter,
+                selectedLevel: nextLevel,
+              });
+            });
+
+            // Remove the listener after use
+            spaceKey.off("down", handleSpace);
+          };
+
+          spaceKey.on("down", handleSpace);
+        }
+
+        getCharacterSpriteKeyForId(characterId) {
+          switch (characterId) {
+            case "pirate":
+              return "piratePenguin";
+
+            case "aviator":
+              return "aviatorPenguin";
+            case "viking":
+              return "vikingPenguin";
+            case "ninja":
+              return "ninjaPenguin";
+            default:
+              return "pudgyPenguin";
+          }
+        }
+
+        getCharacterWalkKeyForId(characterId) {
+          switch (characterId) {
+            case "pirate":
+              return "piratewalk";
+
+            case "aviator":
+              return "aviatorwalk";
+            case "viking":
+              return "vikingwalk";
+            case "ninja":
+              return "ninjawalk";
+            default:
+              return "walk";
+          }
+        }
+
+        createParticleExplosion(
+          x,
+          y,
+          color,
+          count,
+          minSpeed,
+          maxSpeed,
+          lifespan
+        ) {
+          for (let i = 0; i < count; i++) {
+            const particle = this.add.circle(
+              x,
+              y,
+              3 + Math.random() * 4,
+              color,
+              0.8
+            );
+            particle.setScrollFactor(0);
+            particle.setDepth(1015);
+
+            const angle = (Math.PI * 2 * i) / count;
+            const speed = minSpeed + Math.random() * (maxSpeed - minSpeed);
+            const vx = Math.cos(angle) * speed;
+            const vy = Math.sin(angle) * speed;
+
+            this.tweens.add({
+              targets: particle,
+              x: particle.x + vx,
+              y: particle.y + vy,
+              alpha: 0,
+              scale: 0,
+              duration: lifespan,
+              ease: "Power2.easeOut",
+              onComplete: () => particle.destroy(),
+            });
+          }
+        }
+
+        getLevelTheme() {
+          if (this.currentLevel >= 6) {
+            // Level 6+: Random theme - pick a random theme
+            const themes = [
+              // Pirate theme
+              {
+                backgroundColor: 0x1976d2, // vibrant blue
+                parallaxColor: 0x64b5f6, // light blue
+                particleColor: 0xffffff, // white
+                particleSize: [1.5, 3.5],
+                particleAlpha: [0.9, 0.9],
+                particleSpeed: [20, 50],
+                particleDrift: [-0.3, 0.3],
+                name: "PIRATE",
+              },
+              // Aviator theme
+              {
+                backgroundColor: 0x87ceeb, // sky blue
+                parallaxColor: 0xadd8e6, // light blue
+                particleColor: 0xffffff, // white
+                particleSize: [10, 15],
+                particleAlpha: [0.3, 0.7],
+                particleSpeed: [10, 30],
+                particleDrift: [-0.5, 0.5],
+                name: "AVIATOR",
+              },
+              // Viking theme
+              {
+                backgroundColor: 0x4b1919, // deep red
+                parallaxColor: 0x963232, // medium red
+                particleColor: 0xff4500, // orange-red
+                particleSize: [2, 5],
+                particleAlpha: [0.7, 0.9],
+                particleSpeed: [30, 70],
+                particleDrift: [-1.5, 1.5],
+                name: "VIKING",
+              },
+              // Ninja theme
+              {
+                backgroundColor: 0x191932, // dark navy
+                parallaxColor: 0x323264, // dark purple
+                particleColor: 0x00ff00, // green
+                particleSize: [2, 4],
+                particleAlpha: [0.4, 0.8],
+                particleSpeed: [15, 40],
+                particleDrift: [-0.8, 0.8],
+                name: "NINJA",
+              },
+            ];
+            return themes[Math.floor(Math.random() * themes.length)];
+          } else if (this.currentLevel >= 5) {
+            // Level 5: Ninja theme - dark/stealth theme
+            return {
+              backgroundColor: 0x191932, // dark navy
+              parallaxColor: 0x323264, // dark purple
+              particleColor: 0x00ff00, // green ninja energy
+              particleSize: [2, 4],
+              particleAlpha: [0.4, 0.8],
+              particleSpeed: [15, 40],
+              particleDrift: [-0.8, 0.8],
+              name: "NINJA",
+            };
+          } else if (this.currentLevel >= 4) {
+            // Level 4: Viking theme - fire/volcanic theme
+            return {
+              backgroundColor: 0x4b1919, // deep red
+              parallaxColor: 0x963232, // medium red
+              particleColor: 0xff4500, // orange-red lava
+              particleSize: [2, 5],
+              particleAlpha: [0.7, 0.9],
+              particleSpeed: [30, 70],
+              particleDrift: [-1.5, 1.5],
+              name: "VIKING",
+            };
+          } else if (this.currentLevel >= 3) {
+            // Level 3: Aviator theme - sky/cloud theme
+            return {
+              backgroundColor: 0x87ceeb, // sky blue
+              parallaxColor: 0xadd8e6, // light blue
+              particleColor: 0xffffff, // white clouds
+              particleSize: [10, 15],
+              particleAlpha: [0.3, 0.7],
+              particleSpeed: [10, 30],
+              particleDrift: [-0.5, 0.5],
+              name: "AVIATOR",
+            };
+          } else {
+            // Level 1-2: Pirate theme - ocean theme
+            return {
+              backgroundColor: 0x1976d2, // vibrant blue
+              parallaxColor: 0x64b5f6, // light blue
+              particleColor: 0xffffff, // white waves
+              particleSize: [1.5, 3.5],
+              particleAlpha: [0.9, 0.9],
+              particleSpeed: [20, 50],
+              particleDrift: [-0.3, 0.3],
+              name: "PIRATE",
+            };
+          }
+        }
+
+        createAtmosphericParticles(theme) {
+          // Create atmospheric particles based on theme
+          this.atmosphericParticles = this.add.particles(0, 0, "coin", {
+            x: { min: -200, max: this.cameras.main.width * 3 + 200 },
+            y: { min: -50, max: this.cameras.main.height / 2 },
+            speedX: {
+              min: theme.particleDrift[0] * 50,
+              max: theme.particleDrift[1] * 50,
+            },
+            speedY: {
+              min: theme.particleSpeed[0],
+              max: theme.particleSpeed[1],
+            },
+            scale: {
+              min: theme.particleSize[0] * 0.1,
+              max: theme.particleSize[1] * 0.1,
+            },
+            alpha: {
+              min: theme.particleAlpha[0],
+              max: 0.05,
+            },
+            tint: theme.particleColor,
+            lifespan: 6000,
+            frequency: 100,
+            quantity: 1,
+            blendMode: "ADD",
+          });
+          this.atmosphericParticles.setDepth(-5);
+          // Set parallax scroll factor - particles move slower than camera for depth effect
+          this.atmosphericParticles.setScrollFactor(0.3, 1);
+        }
+
+        startLevelMusic() {
+          // Stop any existing music
+          if (this.levelMusic) {
+            this.levelMusic.stop();
+          }
+
+          // Stop all sounds to prevent victory music from continuing
+          this.sound.stopAll();
+
+          // Determine music based on level theme
+          let musicKey;
+          if (this.currentLevel >= 1 && this.currentLevel <= 2) {
+            musicKey = "PirateMusic";
+          } else if (this.currentLevel === 3) {
+            musicKey = "AviatorMusic";
+          } else if (this.currentLevel === 4) {
+            musicKey = "VikingMusic";
+          } else if (this.currentLevel === 5) {
+            musicKey = "NinjaMusic";
+          } else {
+            // Level 6+: Random theme
+            const themes = [
+              "PirateMusic",
+              "AviatorMusic",
+              "VikingMusic",
+              "NinjaMusic",
+            ];
+            musicKey = themes[Math.floor(Math.random() * themes.length)];
+          }
+
+          // Start the music
+          this.levelMusic = this.sound.add(musicKey, {
+            loop: true,
+            volume: 0.3,
+          });
+          if (!gameData.isMuted) {
+            this.levelMusic.play();
+          }
+        }
+
+        createBackgroundLayers(map) {
+          if (!map || !map.size) return;
+
+          const mapWidth = map.size.width;
+          const mapHeight = map.size.height;
+
+          // Calculate how many background tiles we need to cover the entire level
+          const bgWidth = 1340; // Background image width
+          const bgHeight = 600; // Background image height
+          const tilesNeededX = Math.ceil(mapWidth / bgWidth) + 2; // +2 for buffer
+          const tilesNeededY = 1; // Only need 1 row since height matches screen
+
+          // Calculate scale factor to fill screen height with camera zoom
+          const screenHeight = 600; // Game screen height
+          const cameraZoom = 0.45;
+          const visibleHeight = screenHeight / cameraZoom; // What the camera actually sees
+          const scaleY = visibleHeight / bgHeight; // Scale factor to fill visible height
+
+          // Get theme colors for this level
+          const theme = this.getLevelTheme();
+
+          // Background layer (furthest back, no parallax)
+          this.backgroundLayer = this.add.group();
+          if (this.backgroundLayer) {
+            for (let x = 0; x < tilesNeededX; x++) {
+              const bgTile = this.add.tileSprite(
+                x * bgWidth - 400,
+                0, // Always at y=0 since we only need one row
+                bgWidth,
+                bgHeight,
+                "gamebackground1"
+              );
+              if (bgTile) {
+                bgTile.setOrigin(0, 0);
+                bgTile.setDepth(-10);
+                bgTile.setScale(2, scaleY); // Scale vertically to fill screen
+                bgTile.setScrollFactor(0, 1); // No horizontal scroll, full vertical scroll
+                bgTile.setTint(theme.backgroundColor); // Apply theme color
+                this.backgroundLayer.add(bgTile);
+              }
+            }
+          }
+
+          // Parallax background layer (moves slower than camera)
+          this.parallaxLayer = this.add.group();
+          if (this.parallaxLayer) {
+            for (let x = 0; x < tilesNeededX; x++) {
+              const parallaxTile = this.add.tileSprite(
+                x * bgWidth - 400,
+                50, // Always at y=0 since we only need one row
+                bgWidth,
+                bgHeight,
+                "gameparralaxbackground1"
+              );
+              if (parallaxTile) {
+                parallaxTile.setOrigin(0, 0);
+                parallaxTile.setDepth(-1);
+                parallaxTile.setScale(2, scaleY); // Scale vertically to fill screen
+                parallaxTile.setScrollFactor(0.5, 1); // 0.5x horizontal scroll for parallax effect
+                parallaxTile.setTint(theme.parallaxColor); // Apply theme color
+                this.parallaxLayer.add(parallaxTile);
+              }
+            }
+          }
+
+          // Create atmospheric particles
+          this.createAtmosphericParticles(theme);
+
+          // Camera bounds will be set up after player is created
+        }
+
+        updateBackgroundLayers() {
+          if (
+            !this.player ||
+            !this.parallaxLayer ||
+            !this.cameras ||
+            !this.cameras.main
+          )
+            return;
+
+          // Subtle parallax effect - just use the scroll factor, no manual positioning
+          // The scroll factor of 0.5 already handles the parallax effect automatically
+        }
+
+        destroy() {
+          // Stop music
+          if (this.levelMusic) {
+            this.levelMusic.stop();
+          }
+          super.destroy();
+        }
+      }
+
+      // Game configuration
+      const config = {
+        type: Phaser.AUTO,
+        width: 400,
+        height: 600,
+        parent: "game-container",
+        backgroundColor: "#b3d9ff",
+        physics: {
+          default: "arcade",
+          arcade: {
+            gravity: { y: 3000 },
+            debug: false,
+          },
+        },
+        pixelArt: false,
+        render: { roundPixels: false },
+        scene: [BootLoader, HubScene, GameScene],
+        scale: {
+          mode: Phaser.Scale.FIT,
+          autoCenter: Phaser.Scale.CENTER_BOTH,
+        },
+      };
+
+      // Start the game
+      const game = new Phaser.Game(config);
+
+      // Initialize game data when SDK is ready
+      window.FarcadeSDK.singlePlayer.actions.ready().then((gameInfo) => {
+        if (gameInfo && gameInfo.initialGameState) {
+          gameData.initialize(gameInfo.initialGameState.gameState);
+        } else {
+          gameData.initialize();
+        }
+      });
+
+      // Farcade SDK event handlers
+      window.FarcadeSDK.on("play_again", () => {
+        // Return to hub scene
+        game.scene.start("HubScene");
+      });
+
+      window.FarcadeSDK.on("toggle_mute", ({ isMuted }) => {
+        gameData.isMuted = isMuted;
+      });
+    </script>
+  </body>
+</html>

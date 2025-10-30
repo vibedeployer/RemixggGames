@@ -1,0 +1,2448 @@
+<![doctype html>
+<!DOCTYPE html>
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
+    <title>Grapple & Boom</title>
+    <style>
+      html,
+      body {
+        height: 100%;
+        margin: 0;
+        background: #0e0e13;
+        -webkit-user-select: none;
+        -moz-user-select: none;
+        -ms-user-select: none;
+        user-select: none;
+        overscroll-behavior: none; /* stops pull-to-refresh/scroll chaining */
+        touch-action: none; /* disables gestures */
+      }
+      /* Make the game container truly full-screen */
+      #game {
+        position: fixed;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      canvas {
+        -webkit-user-select: none;
+        user-select: none;
+        display: block;
+        width: 100% !important;
+        height: 100% !important;
+      }
+      /* fallback UI / mobile controls */
+      .hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        font-family: system-ui, sans-serif;
+      }
+      /* pill buttons (reused for bomb/claw) */
+      .hud .pill {
+        pointer-events: auto;
+        user-select: none;
+        padding: 12px 18px;
+        font-family: "Press Start 2P";
+        background: #1f2733;
+        color: #e5f0ff;
+        box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        border: 1px solid #2d3b4f;
+        min-width: 72px;
+        text-align: center;
+      }
+      .hud .pill:active {
+        transform: scale(0.98);
+      }
+
+      /* Mobile controls container (inside hud) */
+      .mobile-controls .joystick {
+        position: absolute;
+        left: 30px;
+        bottom: 30px;
+        width: 112px;
+        height: 112px;
+        pointer-events: auto;
+        touch-action: none;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .mobile-controls .joystick .base {
+        position: absolute;
+        inset: 0;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.03);
+        border: 2px solid rgba(104, 178, 255, 0.12);
+        box-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+      }
+      .mobile-controls .joystick .knob {
+        position: absolute;
+        width: 48px;
+        height: 48px;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        border-radius: 999px;
+        background: rgba(104, 178, 255, 0.95);
+        box-shadow: 0 6px 12px rgba(0, 0, 0, 0.45);
+        opacity: 0.95;
+        touch-action: none;
+      }
+
+      /* Right-side action buttons */
+      .mobile-controls .right-controls {
+        position: absolute;
+        right: 16px;
+        bottom: 16px;
+        display: flex;
+        flex-direction: row;
+        gap: 10px;
+        pointer-events: auto;
+      }
+
+      /* Slightly smaller on very small screens */
+      @media (max-width: 420px) {
+        .mobile-controls .joystick {
+          width: 92px;
+          height: 92px;
+        }
+        .mobile-controls .joystick .knob {
+          width: 40px;
+          height: 40px;
+        }
+      }
+    </style>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap"
+      rel="stylesheet"
+    />
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.0/dist/phaser.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@farcade/game-sdk@0.2.1/dist/index.min.js"></script>
+  </head>
+  <body>
+    <div id="game"></div>
+
+    <!-- HUD with mobile controls (joystick bottom-left, action buttons bottom-right) -->
+    <div class="hud">
+      <div class="mobile-controls">
+        <div id="joy" class="joystick" aria-hidden="false">
+          <div class="base"></div>
+          <div id="joyKnob" class="knob" aria-hidden="true"></div>
+        </div>
+
+        <div class="right-controls" role="group" aria-label="Actions">
+          <button id="clawBtn" class="pill" aria-label="Claw">CLAW</button>
+          <button id="bombBtn" class="pill" aria-label="Drop Bomb">BOMB</button>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      (() => {
+        const SCALE = 1;
+        const W = 360; // Adjusted for 9:16 aspect ratio
+        const H = 640; // Adjusted for 9:16 aspect ratio
+
+        // New: big meteor configuration
+        const BIG_METEOR_CHANCE = 0.18;
+        const BIG_METEOR_SIZE = 28 * SCALE;
+        const BIG_METEOR_SCORE = 25;
+        const NORMAL_METEOR_SCORE = 10;
+
+        // Use Phaser Resize scale mode so the canvas stays fullscreen/responsive
+        const config = {
+          type: Phaser.AUTO,
+          parent: "game",
+          width: W,
+          height: H,
+          scale: {
+            mode: Phaser.Scale.FIT,
+            autoCenter: Phaser.Scale.CENTER_BOTH,
+          },
+          backgroundColor: "#0e0e13",
+          physics: {
+            default: "arcade",
+            arcade: { gravity: { y: 5 }, debug: false },
+          },
+          scene: { preload, create, update },
+          pixelArt: true,
+        };
+
+        const game = new Phaser.Game(config);
+
+        // --- Game State (module-scope for brevity) ---
+        let earthGraphic;
+        let player,
+          hook,
+          gun,
+          hookLine,
+          hookActive = false,
+          hookReturning = false;
+        let ammoGroup, meteorGroup, bombGroup, explosionGroup, armourGroup;
+        let lastSpawn = 0,
+          spawnInterval = 4000; // ms
+        let score = 0,
+          health = 3,
+          ammo = 0;
+        let scoreText, ammoText, healthText, infoText;
+        let healthGraphics;
+        let ammoGraphics;
+
+        let cursors, keyB, keyR, keyC, keyX, keysWASD;
+        let bombBtnEl, clawBtnEl;
+
+        // Crosshair state
+        let crosshair;
+        let crossX = W / 2,
+          crossY = H / 2;
+        const CROSS_SPEED = 260 * SCALE; // px / sec
+        let isMuted = false;
+
+        // Joystick state (for mobile)
+        let joyActive = false;
+        let joyPointerId = null;
+        let joyCenter = { x: 0, y: 0 };
+        let joyMax = 40; // px radius for knob
+        let joyVec = { x: 0, y: 0 };
+
+        const joystick = document.querySelector(".joystick");
+        const knob = joystick.querySelector(".knob");
+
+        let active = false;
+
+        joystick.addEventListener(
+          "touchstart",
+          (e) => {
+            e.preventDefault();
+            active = true;
+          },
+          { passive: false }
+        );
+
+        joystick.addEventListener(
+          "touchmove",
+          (e) => {
+            e.preventDefault(); // 🚫 stop page scroll
+            if (!active) return;
+
+            const touch = e.touches[0];
+            const rect = joystick.getBoundingClientRect();
+            const centerX = rect.left + rect.width / 2;
+            const centerY = rect.top + rect.height / 2;
+
+            const dx = touch.clientX - centerX;
+            const dy = touch.clientY - centerY;
+
+            // move knob visually
+            knob.style.transform = `translate(${dx}px, ${dy}px)`;
+
+            // send dx,dy into your Phaser crosshair movement
+          },
+          { passive: false }
+        );
+
+        joystick.addEventListener(
+          "touchend",
+          (e) => {
+            e.preventDefault();
+            active = false;
+            knob.style.transform = "translate(-50%, -50%)"; // reset
+          },
+          { passive: false }
+        );
+
+        // Explosion radius used for visuals & damage
+        const EXPLOSION_RADIUS = 60 * SCALE;
+        const EXPLOSION_COLOR = 0xfff2a8; // fallback single color (still present for other uses)
+
+        // Graphics for crosshair zone
+        let crossZone;
+
+        // default initial spawnInterval for reset
+        const DEFAULT_SPAWN = 4000;
+
+        // Armour config
+        const ARMOUR_CHANCE = 0.08; // low chance to spawn armour
+        const MAX_HEALTH = 10;
+        const SAFE_MARGIN = 0 * SCALE;
+
+        // particle manager for flames (kept for legacy/back-compat)
+        let flameParticles;
+
+        // Explosion duration (ms) set to 1.5s per request
+        const EXPLOSION_DURATION = 1400;
+
+        // Flag: once the player has collected their first ammo, new falling objects should not get labels
+        let labelsDisabled = false;
+
+        // Helper: safely destroy an object and its attached visual hpBar/trail/label (defensive)
+        function safeRemove(obj) {
+          try {
+            if (!obj) return;
+            // destroy attached trail if present
+            const tr = obj.getData && obj.getData("trail");
+            if (tr && tr.destroy) {
+              try {
+                tr.destroy();
+              } catch (e) {}
+            }
+          } catch (e) {}
+          try {
+            const hb = obj.getData && obj.getData("hpBar");
+            if (hb && hb.destroy) {
+              try {
+                hb.destroy();
+              } catch (e) {}
+            }
+          } catch (e) {}
+          try {
+            const lb = obj.getData && obj.getData("label");
+            if (lb && lb.destroy) {
+              try {
+                lb.destroy();
+              } catch (e) {}
+            }
+          } catch (e) {}
+          try {
+            // if object still exists, destroy it
+            if (obj && obj.destroy) obj.destroy();
+          } catch (e) {}
+        }
+
+        // Remove all floating labels for all current fallers (called when player claws ammo or armour)
+        function clearAllFloatingLabels(scene) {
+          if (!scene) return;
+          const groups = [meteorGroup, ammoGroup, armourGroup];
+          for (let g of groups) {
+            if (!g) continue;
+            g.children.iterate((o) => {
+              if (!o) return;
+              const lb = o.getData && o.getData("label");
+              if (lb && lb.destroy) {
+                try {
+                  lb.destroy();
+                } catch (e) {}
+              }
+              try {
+                if (o.setData) o.setData("label", null);
+              } catch (e) {}
+            });
+          }
+        }
+
+        // Draw health as green rectangles centered at the healthText anchor.
+        function updateHealthUI(scene) {
+          try {
+            if (!scene) return;
+            if (!healthGraphics || !healthGraphics.clear) {
+              // (re)create if missing
+              healthGraphics = scene.add.graphics().setDepth(22);
+            } else {
+              healthGraphics.clear();
+            }
+
+            const anchorX = scene.scale.width / 2 + 40; // Starting point for the health bar
+            const anchorY = scene.scale.height - 103 * SCALE;
+
+            const n = Math.max(
+              0,
+              Math.min(MAX_HEALTH, Math.round(health || 0))
+            );
+            if (n <= 0) return; // nothing to draw
+
+            const rectW = 6 * SCALE;
+            const rectH = 16 * SCALE;
+            const gap = 6 * SCALE;
+
+            // draw filled green rectangles and subtle border
+            for (let i = 0; i < n; i++) {
+              const rx = Math.round(anchorX + i * (rectW + gap)); // Move right for each health bar
+              healthGraphics.fillStyle(0x57e089, 1);
+              healthGraphics.fillRect(
+                rx,
+                anchorY,
+                Math.round(rectW),
+                Math.round(rectH)
+              );
+              healthGraphics.lineStyle(
+                Math.max(1, Math.round(1 * SCALE)),
+                0x57e089,
+                0.6
+              );
+              healthGraphics.strokeRect(
+                rx + 0.5,
+                anchorY + 0.5,
+                Math.round(rectW) - 1,
+                Math.round(rectH) - 1
+              );
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+
+        // Draw Ammo as orange rectangles centered at the ammoText anchor (uses ammoGraphics like healthGraphics).
+        function updateAmmoUI(scene) {
+          try {
+            if (!scene) return;
+            if (!ammoGraphics || !ammoGraphics.clear) {
+              // (re)create if missing
+              ammoGraphics = scene.add.graphics().setDepth(22);
+            } else {
+              ammoGraphics.clear();
+            }
+
+            const anchorX = scene.scale.width / 2 - 50; // Starting point for the first ammo bar
+            const anchorY = scene.scale.height - 103 * SCALE;
+
+            const n = Math.max(0, Math.min(10, Math.round(ammo || 0)));
+            if (n <= 0) return; // nothing to draw
+
+            const rectW = 6 * SCALE;
+            const rectH = 16 * SCALE;
+            const gap = 6 * SCALE;
+
+            // draw filled orange rectangles and subtle border
+            for (let i = 0; i < n; i++) {
+              const rx = Math.round(anchorX - i * (rectW + gap)); // Move left for each ammo bar
+              ammoGraphics.fillStyle(0xff9a2e, 1); // bright orange
+              ammoGraphics.fillRect(
+                rx,
+                anchorY,
+                Math.round(rectW),
+                Math.round(rectH)
+              );
+              ammoGraphics.lineStyle(
+                Math.max(1, Math.round(1 * SCALE)),
+                0xff9a2e,
+                0.6
+              );
+              ammoGraphics.strokeRect(
+                rx + 0.5,
+                anchorY + 0.5,
+                Math.round(rectW) - 1,
+                Math.round(rectH) - 1
+              );
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        }
+
+        function preload() {
+          this.loadFontPromise = document.fonts.load('16px "Press Start 2P"');
+          // Generate minimal textures (no external assets) for player/bomb/spark/cross
+          this.textures.generate("player", {
+            data: [
+              ".....5.....",
+              "....555....",
+              "...55555...",
+              "..5555555..",
+              "..5555555..",
+              "....555....",
+              "....555....",
+              "....555....",
+            ],
+            pixelWidth: 3 * SCALE,
+            palette: { 5: "#68b2ff" },
+          });
+
+          // Load custom claw image provided by user (replaces generated yellow dot)
+          this.load.image(
+            "hook",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/hook-mdhnTukEClTGRB8pONbrDz7ZtLHmqx.png?RNwf"
+          );
+
+          this.load.image(
+            "gun",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/gun-GeCsSbbqOzOXTQFbSHxrETjmMPT0EY.png?qGVl"
+          );
+
+          this.load.audio(
+            "music",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/025270_pixel-song-4-72676-E5EcmRgOtNrV2eFEydYb9OacHimqGv.mp3?eMB9"
+          );
+
+          this.load.audio(
+            "explosion",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/explosion-8-bit-8-314694-32bnsSpNmICt73NE1xLeakXxZYMJQv.mp3?iEcZ"
+          );
+
+          this.load.audio(
+            "shoot",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/shoot-vaxiq0QV7yILbeKIoyjn9KOVEHiARs.mp3?C4zz"
+          );
+
+          this.load.audio(
+            "shoothook",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/sfx_jump_07-80241-M8Vw5ZLmSb71ywzgv034TRG5at4Kar.mp3?T4zj"
+          );
+
+          this.load.audio(
+            "collect",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/gameboy-pluck-41265-X9xIKjQh45iRsTtV3oi00VQL468xhp.mp3?QEVd"
+          );
+
+          this.textures.generate("bomb", {
+            data: [".666.", "66666", "66666", ".666."],
+            pixelWidth: 3 * SCALE,
+            palette: { 6: "#cde2ff" },
+          });
+
+          this.textures.generate("spark", {
+            data: [".9.", "999", ".9."],
+            pixelWidth: 2 * SCALE,
+            palette: { 9: "#fff2a8" },
+          });
+
+          // small crosshair texture (dot + outline)
+          this.textures.generate("cross", {
+            data: [
+              ".......",
+              "..000..",
+              ".01110.",
+              ".01210.",
+              ".01110.",
+              "..000..",
+              ".......",
+            ],
+            pixelWidth: 1 * SCALE,
+            palette: { 0: "#ffffff", 1: "#68b2ff", 2: "#0e0e13" },
+          });
+
+          // Load provided 8x8 pixel assets (use keys matching original code: ammo, armour, meteor)
+          this.load.image(
+            "ammo",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/ammo-zKKYE5twb6pDAxqEEHnEyVuZ2XiiM1.png?st8M"
+          );
+          this.load.image(
+            "armour",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/battery-5ARShUTP5ndo21TAWaB30aWgHMtI2w.png?LvLQ"
+          );
+          this.load.image(
+            "meteor",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/meteor-aRiACpxWyTCeJmIRnknCpUozZq8fGe.png?5e31"
+          );
+          this.load.image(
+            "city",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/city-iEvjMGkEBwFsCg0MyzSu75emJmTic1.png?CIb2"
+          );
+
+          // New: load provided 16x16 5-frame fire sprite to use as animated trail
+          this.load.spritesheet(
+            "firetrail",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/fire-jWAaSFTDd4dxcLEPxUJV0pKDv6Se0Z.png?tEpw",
+            { frameWidth: 16, frameHeight: 16 }
+          );
+
+          // Earth sprite sheet just for visual effect
+          this.load.spritesheet(
+            "earthspinning",
+            "https://lqy3lriiybxcejon.public.blob.vercel-storage.com/0e9f19b4-4ca4-40c5-b3d0-193fd58b62ba/earthspin-sheet-export-8bnXVJSdwe8fqQzUFuIt0JI8PZXRrk.png?tQos",
+            { frameWidth: 16, frameHeight: 16 }
+          );
+        }
+
+        function create() {
+          // reset or initialize module-scope variables that may have been mutated
+          spawnInterval = DEFAULT_SPAWN;
+          lastSpawn = 0;
+          score = 0;
+          health = 3;
+          ammo = 0;
+          hookActive = false;
+          hookReturning = false;
+          labelsDisabled = false;
+
+          const cx = this.scale.width / 2;
+          const bottom = this.scale.height - 120 * SCALE;
+
+          this.sound.play("music", { volume: 0.6, loop: true });
+
+          // create animation for the fire trail
+          try {
+            this.anims.create({
+              key: "fireAnim",
+              frames: this.anims.generateFrameNumbers("firetrail", {
+                start: 0,
+                end: 4,
+              }),
+              frameRate: 14,
+              repeat: -1,
+            });
+          } catch (e) {}
+
+          // EARTH for visuals:
+          earthGraphic = this.add
+            .image(cx + 170, this.scale.height / 2 + 100, "earthspinning")
+            .setDepth(0)
+            .setScale(4)
+            .setAlpha(0.4);
+
+          // Player (fixed)
+          player = this.physics.add
+            .image(cx, bottom, "city")
+            .setImmovable(true)
+            .setDepth(10)
+            .setScale(1.2);
+          player.body.allowGravity = false;
+
+          // Hook (made larger)
+          hook = this.physics.add
+            .image(player.x + 10, player.y - 30 * SCALE, "hook")
+            .setVisible(true);
+          gun = this.add
+            .image(player.x - 10, player.y - 30 * SCALE, "gun")
+            .setVisible(true);
+
+          try {
+            // increase hook visual size
+            hook.setScale(1.8 * SCALE);
+            gun.setScale(1.8 * SCALE);
+          } catch (e) {}
+          try {
+            // set a circle body radius based on the (now scaled) display size
+            const base = hook.displayWidth || hook.width || 24;
+            const radius = Math.max(6 * SCALE, Math.round(base * 0.28));
+            hook.setCircle(radius);
+          } catch (e) {}
+          hook.body.setAllowGravity(false);
+          hook.body.setMaxSpeed(800);
+          hook.setData("returnTweening", false);
+
+          hookLine = this.add.graphics().setDepth(5);
+
+          // Groups
+          ammoGroup = this.physics.add.group();
+          meteorGroup = this.physics.add.group();
+          bombGroup = this.physics.add.group();
+          explosionGroup = this.add.group(); // visuals only
+          armourGroup = this.physics.add.group();
+
+          // particle manager for flames/trails (kept for compatibility)
+          flameParticles = this.add.particles("spark");
+          flameParticles.setDepth(6);
+
+          // Ensure world bounds handling so fallers cannot leave the visible area.
+          this.physics.world.on(
+            "worldbounds",
+            function (body, up, down, left, right) {
+              const go = body && body.gameObject;
+              if (!go || !go.active) return;
+              const type = go.getData("type");
+              if (type === "meteor" && down) {
+                try {
+                  onMeteorHitsGround.call(this, player, go);
+                } catch (e) {
+                  safeRemove(go);
+                }
+                return;
+              }
+              const w = this.scale.width;
+              const h = this.scale.height;
+              if (go.x < SAFE_MARGIN) go.x = SAFE_MARGIN;
+              if (go.x > w - SAFE_MARGIN) go.x = w - SAFE_MARGIN;
+
+              if (go.y > h - SAFE_MARGIN) go.y = h - SAFE_MARGIN;
+            },
+            this
+          );
+
+          // Colliders / Overlaps
+          this.physics.add.overlap(hook, ammoGroup, onHookHitsAmmo, null, this);
+          this.physics.add.overlap(
+            hook,
+            armourGroup,
+            onHookHitsArmour,
+            null,
+            this
+          );
+          this.physics.add.overlap(
+            bombGroup,
+            meteorGroup,
+            onBombTouchesMeteor,
+            null,
+            this
+          );
+          this.physics.add.overlap(
+            player,
+            meteorGroup,
+            onMeteorHitsGround,
+            null,
+            this
+          );
+
+          // New: ammo and armour hitting the player now explode and damage the player
+          this.physics.add.overlap(
+            player,
+            ammoGroup,
+            onAmmoHitsPlayer,
+            null,
+            this
+          );
+          this.physics.add.overlap(
+            player,
+            armourGroup,
+            onArmourHitsPlayer,
+            null,
+            this
+          );
+
+          // UI
+          scoreText = this.add.text(
+            this.scale.width / 2 - 50,
+            this.scale.height - 75,
+            "Score: 0",
+            uiStyle()
+          );
+          ammoText = this.add
+            .image(this.scale.width / 2 - 20, this.scale.height - 95, "ammo")
+            .setScale(2);
+          healthText = this.add
+            .image(this.scale.width / 2 + 20, this.scale.height - 95, "armour")
+            .setScale(2);
+          // hide the textual health representation and draw rectangles instead
+
+          infoText = this.add
+            .text(
+              this.scale.width / 2,
+              this.scale.height / 2,
+              "Move the crosshair\nwith arrows or joystick\n\n\nPress C to fire hook,\n X to launch bomb\n or use buttons",
+              { ...uiStyle(), fontSize: 8 * SCALE + "px", align: "center" }
+            )
+            .setOrigin(0.5);
+
+          this.time.delayedCall(5000, () => infoText.setVisible(false));
+
+          // Draw initial health UI
+          updateHealthUI(this);
+
+          // Draw initial Ammo UI
+          updateAmmoUI(this);
+
+          // Crosshair initial
+          crossX = cx;
+          crossY = this.scale.height / 2;
+          crosshair = this.add
+            .image(crossX, crossY, "cross")
+            .setDepth(30)
+            .setScale(1.3 * SCALE);
+
+          // Zone graphic (pixelated indicator when ammo available)
+          crossZone = this.add.graphics().setDepth(24);
+
+          // Input
+          cursors = this.input.keyboard.createCursorKeys();
+          keyB = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.B);
+          keyR = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.R);
+          keyC = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.C);
+          keyX = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
+          keysWASD = this.input.keyboard.addKeys({
+            up: Phaser.Input.Keyboard.KeyCodes.W,
+            down: Phaser.Input.Keyboard.KeyCodes.S,
+            left: Phaser.Input.Keyboard.KeyCodes.A,
+            right: Phaser.Input.Keyboard.KeyCodes.D,
+          });
+
+          // Replace pointer firing: pointer moves the crosshair; clicks also set position but do not fire
+          // If joystick is active, pointermove from Phaser will be ignored (joystick controls movement)
+          /*this.input.on("pointermove", (pointer) => {
+            if (joyActive) return;
+            crossX = Phaser.Math.Clamp(pointer.worldX, SAFE_MARGIN, this.scale.width - SAFE_MARGIN);
+            crossY = Phaser.Math.Clamp(pointer.worldY, SAFE_MARGIN, this.scale.height - SAFE_MARGIN);
+            crosshair.setPosition(crossX, crossY);
+          }); */
+
+          // Keyboard actions for C and X
+          this.input.keyboard.on("keydown-C", () =>
+            fireHookAtCrosshair.call(this)
+          );
+          this.input.keyboard.on("keydown-X", () =>
+            tryThrowBombAtCrosshair.call(this)
+          );
+          this.input.keyboard.on("keydown-R", () => resetGame.call(this));
+
+          // Mobile buttons
+          bombBtnEl = document.getElementById("bombBtn");
+          clawBtnEl = document.getElementById("clawBtn");
+
+          // Ensure handlers reference the scene
+          if (bombBtnEl) {
+            bombBtnEl.addEventListener("pointerdown", (e) => {
+              e.preventDefault();
+              tryThrowBombAtCrosshair.call(this);
+            });
+          }
+          if (clawBtnEl) {
+            clawBtnEl.addEventListener("pointerdown", (e) => {
+              e.preventDefault();
+              fireHookAtCrosshair.call(this);
+            });
+          }
+
+          // Joystick wiring (DOM)
+          const joyEl = document.getElementById("joy");
+          const knob = document.getElementById("joyKnob");
+          if (joyEl && knob) {
+            // compute center & max on pointerdown (in case of resize)
+            function updateJoyLayout() {
+              const r = joyEl.getBoundingClientRect();
+              joyCenter.x = r.left + r.width / 2;
+              joyCenter.y = r.top + r.height / 2;
+              // use about 40% of half-width for max displacement
+              joyMax = Math.max(28, Math.min(54, Math.round(r.width * 0.38)));
+            }
+            updateJoyLayout();
+            window.addEventListener("orientationchange", () =>
+              setTimeout(updateJoyLayout, 300)
+            );
+            window.addEventListener("resize", () =>
+              setTimeout(updateJoyLayout, 120)
+            );
+
+            function setKnobPos(dx, dy) {
+              knob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+            }
+
+            function resetKnob() {
+              joyVec.x = 0;
+              joyVec.y = 0;
+              setKnobPos(0, 0);
+            }
+
+            joyEl.addEventListener(
+              "pointerdown",
+              (ev) => {
+                ev.preventDefault();
+                ev.stopPropagation();
+                joyActive = true;
+                joyPointerId = ev.pointerId;
+                updateJoyLayout();
+                // capture to keep receiving moves
+                try {
+                  joyEl.setPointerCapture(joyPointerId);
+                } catch (e) {}
+                const dx = ev.clientX - joyCenter.x;
+                const dy = ev.clientY - joyCenter.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const clamped = Math.min(len, joyMax);
+                const nx = (dx / len) * clamped;
+                const ny = (dy / len) * clamped;
+                setKnobPos(nx, ny);
+                joyVec.x = nx / joyMax || 0;
+                joyVec.y = ny / joyMax || 0;
+              },
+              { passive: false }
+            );
+
+            joyEl.addEventListener(
+              "pointermove",
+              (ev) => {
+                if (!joyActive || ev.pointerId !== joyPointerId) return;
+                ev.preventDefault();
+                const dx = ev.clientX - joyCenter.x;
+                const dy = ev.clientY - joyCenter.y;
+                const len = Math.hypot(dx, dy) || 1;
+                const clamped = Math.min(len, joyMax);
+                const nx = (dx / len) * clamped;
+                const ny = (dy / len) * clamped;
+                setKnobPos(nx, ny);
+                joyVec.x = nx / joyMax || 0;
+                joyVec.y = ny / joyMax || 0;
+              },
+              { passive: false }
+            );
+
+            function endJoy(ev) {
+              if (!joyActive) return;
+              if (ev && ev.pointerId && ev.pointerId !== joyPointerId) return;
+              joyActive = false;
+              joyPointerId = null;
+              try {
+                if (ev && ev.pointerId)
+                  joyEl.releasePointerCapture(ev.pointerId);
+              } catch (e) {}
+              resetKnob();
+            }
+            joyEl.addEventListener("pointerup", endJoy);
+            joyEl.addEventListener("pointercancel", endJoy);
+            // also listen globally so lifting finger outside the joystick still resets
+            window.addEventListener("pointerup", endJoy);
+            window.addEventListener("pointercancel", endJoy);
+          }
+
+          // Difficulty ramp
+          this.time.addEvent({
+            delay: 5000,
+            loop: true,
+            callback: () => {
+              spawnInterval = Math.max(200, spawnInterval - 60);
+            },
+          });
+
+          // Farcade SDK hooks (graceful if SDK missing)
+          if (
+            window.FarcadeSDK &&
+            window.FarcadeSDK.singlePlayer &&
+            window.FarcadeSDK.singlePlayer.actions
+          ) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.ready();
+            } catch (e) {
+              console.warn("Farcade ready error", e);
+            }
+          }
+
+          // SDK event handlers
+          if (window.FarcadeSDK && typeof window.FarcadeSDK.on === "function") {
+            window.FarcadeSDK.on("play_again", () => {
+              resetGame.call(this);
+            });
+            window.FarcadeSDK.on("toggle_mute", ({ isMuted: m }) => {
+              isMuted = !!m;
+            });
+          }
+        }
+
+        function update(time, delta) {
+          // Spawning
+          if (time > lastSpawn + spawnInterval) {
+            lastSpawn = time;
+            spawnFaller.call(this);
+          }
+
+          // Crosshair keyboard movement + joystick
+          const dt = delta / 1000;
+          let dx = 0,
+            dy = 0;
+          if (cursors.left.isDown || keysWASD.left.isDown) dx -= 1;
+          if (cursors.right.isDown || keysWASD.right.isDown) dx += 1;
+          if (cursors.up.isDown || keysWASD.up.isDown) dy -= 1;
+          if (cursors.down.isDown || keysWASD.down.isDown) dy += 1;
+
+          // add joystick contribution (joyVec ranges approx -1..1)
+          if (Math.abs(joyVec.x) > 0.01 || Math.abs(joyVec.y) > 0.01) {
+            dx += joyVec.x;
+            dy += joyVec.y;
+          }
+
+          if (dx !== 0 || dy !== 0) {
+            const len = Math.hypot(dx, dy) || 1;
+            crossX = Phaser.Math.Clamp(
+              crossX + (dx / len) * CROSS_SPEED * dt,
+              SAFE_MARGIN,
+              this.scale.width - SAFE_MARGIN
+            );
+            crossY = Phaser.Math.Clamp(
+              crossY + (dy / len) * CROSS_SPEED * dt,
+              SAFE_MARGIN,
+              this.scale.height - 140
+            );
+            crosshair.setPosition(crossX, crossY);
+          }
+
+          // Draw pixelated zone around crosshair when we have ammo
+          crossZone.clear();
+          if (ammo > 0) {
+            drawPixelCircle(
+              crossZone,
+              crossX,
+              crossY,
+              EXPLOSION_RADIUS,
+              6 * SCALE,
+              0x68b2ff,
+              0.16
+            );
+          }
+
+          // Update burning tint for falling objects (meteors, ammo, armour)
+          const h = this.scale.height;
+          const bottomRange = Math.max(1, h - SAFE_MARGIN - SAFE_MARGIN);
+          function lerpColor(a, b, t) {
+            const ar = (a >> 16) & 0xff,
+              ag = (a >> 8) & 0xff,
+              ab = a & 0xff;
+            const br = (b >> 16) & 0xff,
+              bg = (b >> 8) & 0xff,
+              bb = b & 0xff;
+            const rr = Math.round(ar + (br - ar) * t);
+            const rg = Math.round(ag + (bg - ag) * t);
+            const rb = Math.round(ab + (bb - ab) * t);
+            return (rr << 16) | (rg << 8) | rb;
+          }
+          const startColor = 0x9a9a9a; // grey
+          const endColor = 0xff4b3a; // hot red-orange
+
+          const applyBurn = (obj) => {
+            if (!obj || !obj.active) return;
+            const prog = Phaser.Math.Clamp(
+              (obj.y - SAFE_MARGIN) / bottomRange,
+              0,
+              1
+            );
+            const eased = Phaser.Math.Easing.Quadratic.In(prog);
+            const color = lerpColor(startColor, endColor, eased);
+            try {
+              obj.setTint(color);
+            } catch (e) {}
+            // Ensure attached animated trail sprite follows object with configured offset
+            const tr = obj.getData && obj.getData("trail");
+            if (tr) {
+              try {
+                const off = obj.getData("trailOffset") || { x: 0, y: -10 };
+                // ensure the trail is visible and playing
+                if (
+                  tr.anims &&
+                  (!tr.anims.currentAnim ||
+                    tr.anims.currentAnim.key !== "fireAnim")
+                ) {
+                  try {
+                    tr.play("fireAnim", true);
+                  } catch (e) {}
+                }
+                // keep trail behind the object
+                if (typeof obj.depth === "number")
+                  tr.setDepth(Math.max(0, obj.depth - 1));
+                tr.setPosition(obj.x + (off.x || 0), obj.y + (off.y || 0));
+                // tint the trail to match burn progression
+                if (tr.setTint) tr.setTint(color);
+                // speed up animation slightly as it approaches ground
+                if (tr.anims) tr.anims.timeScale = 1 + eased * 1.2;
+                tr.setAlpha(1);
+              } catch (e) {}
+            }
+            // Update floating label position if present
+            try {
+              const lb = obj.getData && obj.getData("label");
+              if (lb) {
+                const ox = (obj.displayWidth || 16) * 0.5 + 8 * SCALE;
+                lb.setPosition(
+                  Math.round(obj.x + ox),
+                  Math.round(obj.y - 4 * SCALE)
+                );
+              }
+            } catch (e) {}
+          };
+
+          meteorGroup.children.iterate((m) => applyBurn(m));
+          ammoGroup.children.iterate((a) => applyBurn(a));
+          armourGroup.children.iterate((a) => applyBurn(a));
+
+          // Update health bars for all falling objects (only large meteors now)
+          const groupsWithHp = [meteorGroup];
+          groupsWithHp.forEach((grp) => {
+            grp.children.iterate((obj) => {
+              if (!obj || !obj.active) return;
+              const hb = obj.getData && obj.getData("hpBar");
+              const maxHp = obj.getData && obj.getData("maxHp");
+              const hp = obj.getData && obj.getData("hp");
+              if (!hb) return;
+              try {
+                hb.clear();
+                const barWidth = Math.max(
+                  18,
+                  Math.round(obj.displayWidth || 18)
+                );
+                const barHeight = Math.max(3, Math.round(4 * SCALE));
+                const bx = Math.round(obj.x - barWidth / 2);
+                const by = Math.round(
+                  obj.y -
+                    (obj.displayHeight || 18) / 2 -
+                    (8 * SCALE + barHeight)
+                );
+                // background
+                hb.fillStyle(0x0b1220, 0.85);
+                hb.fillRect(bx - 1, by - 1, barWidth + 2, barHeight + 2);
+                // border (subtle)
+                hb.lineStyle(1, 0x1f2b38, 0.6);
+                hb.strokeRect(bx - 1, by - 1, barWidth + 2, barHeight + 2);
+                // fill by ratio (avoid divide by zero)
+                const ratio = Phaser.Math.Clamp((hp || 0) / (maxHp || 1), 0, 1);
+                let color = 0x57e089; // green
+                if (ratio <= 0.6 && ratio > 0.3) color = 0xffd166; // yellowish
+                else if (ratio <= 0.3) color = 0xff4b3a; // red
+                hb.fillStyle(color, 1);
+                hb.fillRect(
+                  bx,
+                  by,
+                  Math.max(2, Math.round(barWidth * ratio)),
+                  barHeight
+                );
+                hb.setDepth(12);
+              } catch (e) {}
+            });
+          });
+
+          // Spawning & hook rope drawing & logic
+          hookLine.clear();
+
+          if (hookActive) {
+            hookLine.lineStyle(2 * SCALE, 0xd9e6ff, 0.9);
+            hookLine.beginPath();
+            hookLine.moveTo(player.x + 10, player.y - 16 * SCALE);
+            hookLine.lineTo(hook.x, hook.y);
+            hookLine.strokePath();
+
+            // If hook leaves bounds, auto recall
+            if (
+              hook.y < -30 * SCALE ||
+              hook.x < -30 * SCALE ||
+              hook.x > this.scale.width + 30 * SCALE
+            ) {
+              recallHook.call(this);
+            }
+          }
+
+          // If hook was fired toward a target, stop it when it reaches the crosshair position (target)
+          if (hookActive && !hookReturning && hook.active) {
+            const tx = hook.getData("targetX"),
+              ty = hook.getData("targetY");
+            if (tx != null && ty != null && !hook.getData("stuck")) {
+              const d = Phaser.Math.Distance.Between(hook.x, hook.y, tx, ty);
+              if (d <= 12 * SCALE) {
+                try {
+                  if (hook.body) {
+                    hook.body.stop();
+                    hook.body.setVelocity(0, 0);
+                    hook.body.moves = false;
+                    hook.body.immovable = true;
+                  }
+                } catch (e) {}
+                recallHook.call(this);
+                hook.setData("stuck", true);
+              }
+            }
+          }
+
+          // Return hook motion (use tween so it returns still)
+          if (hookReturning && hook.active) {
+            if (!hook.getData("returnTweening")) {
+              if (hook.body) {
+                try {
+                  hook.body.setVelocity(0, 0);
+                  hook.body.enable = false;
+                } catch (e) {}
+              }
+              hook.setData("returnTweening", true);
+              const tx = player.x + 10;
+              const ty = player.y - 30 * SCALE;
+              const dist = Phaser.Math.Distance.Between(hook.x, hook.y, tx, ty);
+              const duration = Phaser.Math.Clamp(
+                Math.round((dist / (700 * SCALE)) * 1000),
+                140,
+                420
+              );
+              this.tweens.add({
+                targets: hook,
+                x: tx,
+                y: ty,
+                duration: duration,
+                ease: "Cubic.Out",
+                onComplete: () => {
+                  if (hook.body) {
+                    try {
+                      hook.body.enable = true;
+                      hook.body.setVelocity(0, 0);
+                      hook.body.setAllowGravity(false);
+                      hook.body.moves = false;
+                    } catch (e) {}
+                  }
+                  hook.setPosition(player.x + 10, player.y - 30 * SCALE);
+                  hook.setData("returnTweening", false);
+                  hookReturning = false;
+                  hookActive = false;
+                },
+              });
+            }
+          }
+
+          // Clean up meteors that pass bottom (just in case)
+          meteorGroup.children.iterate((m) => {
+            if (m && m.active && m.y > this.scale.height + 40 * SCALE)
+              safeRemove(m);
+          });
+        }
+
+        // --- Helpers & Handlers ---
+
+        function uiStyle() {
+          return {
+            fontFamily: '"Press Start 2P"',
+            fontSize: "12px",
+            fill: "#ffffff",
+          };
+        }
+
+        // small helper to create a floating label next to an object
+        function attachFloatingLabel(scene, obj, text, colorHex) {
+          if (!scene || !obj) return;
+          // Respect labelsDisabled flag: do not attach for newly spawned objects after first ammo collected
+          if (labelsDisabled) return;
+          const style = {
+            fontFamily: "monospace",
+            fontSize: Math.max(10, Math.round(12 * SCALE)) + "px",
+            color: "#" + colorHex.toString(16).padStart(6, "0"),
+            stroke: "#000000",
+            strokeThickness: Math.max(2, Math.round(2 * SCALE)),
+          };
+          try {
+            const ox = (obj.displayWidth || 16) * 0.5 + 8 * SCALE;
+            const label = scene.add
+              .text(
+                Math.round(obj.x + ox),
+                Math.round(obj.y - 4 * SCALE),
+                text,
+                style
+              )
+              .setOrigin(0, 0.5)
+              .setDepth(14)
+              .setAlpha(0.98);
+            if (obj.setData) obj.setData("label", label);
+          } catch (e) {}
+        }
+
+        function spawnFaller() {
+          const pad = 6 * SCALE;
+          const x = Phaser.Math.Between(
+            SAFE_MARGIN + pad,
+            this.scale.width - SAFE_MARGIN - pad
+          );
+          // Ensure spawn Y is offscreen above the top edge (randomized further above)
+          const spawnY = 0;
+
+          // armour low chance; remaining probability split equally between ammo and meteor
+          const r = Math.random();
+          const armourP = ARMOUR_CHANCE;
+          const otherP = (1 - armourP) / 2 + 0.1;
+          if (r < armourP) {
+            const a = armourGroup.create(x, spawnY, "armour");
+            // scale 8x8 to ~18x18 for visual parity with generated pixels
+            a.setDisplaySize(18 * SCALE, 18 * SCALE);
+            a.setBounce(0.3);
+            a.setVelocity(
+              Phaser.Math.Between(-8 * SCALE, 8 * SCALE),
+              Phaser.Math.Between(10 * SCALE, 24 * SCALE)
+            );
+            a.setData("type", "armour");
+            try {
+              a.setCircle(Math.max(6 * SCALE, a.displayWidth * 0.32));
+            } catch (e) {}
+            if (a.body) {
+              a.setCollideWorldBounds(true);
+              a.body.onWorldBounds = true;
+            }
+            try {
+              a.setTint(0x9a9a9a);
+              // Attach animated fire trail sprite to this armour (offset slightly behind)
+              const trail = this.add
+                .sprite(a.x, a.y - 10, "firetrail")
+                .setScale(1.5 * SCALE)
+                .setBlendMode(Phaser.BlendModes.ADD)
+                .setDepth(6)
+                .setAlpha(0.95);
+              // try to play animation; safe fallback if missing
+              try {
+                trail.play("fireAnim", true);
+              } catch (e) {}
+              a.setData("trail", trail);
+              a.setData("trailOffset", { x: 0, y: -10 });
+              a.setDepth(7);
+              // Put health data for armour (1 HP) but DO NOT create an hpBar (energy shouldn't show bars)
+              a.setData("hp", 1);
+              a.setData("maxHp", 1);
+              // attach floating label "HEALTH" in green (will be skipped if labelsDisabled)
+              attachFloatingLabel(this, a, "ARMOUR", 0x57e089);
+              a.once("destroy", () => {
+                try {
+                  if (trail && trail.destroy) trail.destroy();
+                } catch (e) {}
+                try {
+                  const hb = a.getData && a.getData("hpBar");
+                  if (hb && hb.destroy) hb.destroy();
+                } catch (e) {}
+                try {
+                  const lb = a.getData && a.getData("label");
+                  if (lb && lb.destroy) lb.destroy();
+                } catch (e) {}
+              });
+            } catch (e) {}
+          } else if (r < armourP + otherP) {
+            const a = ammoGroup.create(x, spawnY, "ammo");
+            a.setDisplaySize(12 * SCALE, 12 * SCALE);
+            a.setBounce(0.25);
+            a.setVelocity(
+              Phaser.Math.Between(-10 * SCALE, 10 * SCALE),
+              Phaser.Math.Between(12 * SCALE, 28 * SCALE)
+            );
+            a.setData("type", "ammo");
+            if (a.body) {
+              a.setCollideWorldBounds(true);
+              a.body.onWorldBounds = true;
+            }
+            try {
+              a.setTint(0x9a9a9a);
+              // Attach animated fire trail sprite to this ammo (offset slightly behind)
+              const trail = this.add
+                .sprite(a.x, a.y - 10, "firetrail")
+                .setScale(1.9 * SCALE)
+                .setBlendMode(Phaser.BlendModes.ADD)
+                .setDepth(6)
+                .setAlpha(0.95);
+              try {
+                trail.play("fireAnim", true);
+              } catch (e) {}
+              a.setData("trail", trail);
+              a.setData("trailOffset", { x: 0, y: -10 });
+              a.setDepth(7);
+              // Put health data for ammo (1 HP) but DO NOT create an hpBar (energy shouldn't show bars)
+              a.setData("hp", 1);
+              a.setData("maxHp", 1);
+              // attach floating label "AMMO" in yellow (will be skipped if labelsDisabled)
+              attachFloatingLabel(this, a, "AMMO", 0xffd166);
+              a.once("destroy", () => {
+                try {
+                  if (trail && trail.destroy) trail.destroy();
+                } catch (e) {}
+                try {
+                  const hb = a.getData && a.getData("hpBar");
+                  if (hb && hb.destroy) hb.destroy();
+                } catch (e) {}
+                try {
+                  const lb = a.getData && a.getData("label");
+                  if (lb && lb.destroy) lb.destroy();
+                } catch (e) {}
+              });
+            } catch (e) {}
+          } else {
+            const isBig = Math.random() < BIG_METEOR_CHANCE;
+            const m = meteorGroup.create(x, spawnY, "meteor");
+            if (isBig) {
+              m.setDisplaySize(BIG_METEOR_SIZE, BIG_METEOR_SIZE);
+              m.setData("hp", 2);
+              m.setData("big", true);
+            } else {
+              m.setDisplaySize(18 * SCALE, 18 * SCALE);
+              m.setData("hp", 1);
+              m.setData("big", false);
+            }
+            try {
+              m.setCircle(Math.max(6 * SCALE, m.displayWidth * 0.36));
+            } catch (e) {}
+            m.setAngularVelocity(Phaser.Math.Between(-40, 40));
+            m.setVelocity(
+              Phaser.Math.Between(-15 * SCALE, 15 * SCALE),
+              Phaser.Math.Between(30 * SCALE, 60 * SCALE)
+            );
+            m.setData("type", "meteor");
+            if (m.body) {
+              m.setBounce(0.6);
+              m.setCollideWorldBounds(true);
+              m.body.onWorldBounds = true;
+            }
+            try {
+              m.setTint(0x9a9a9a);
+              // Attach animated fire trail sprite to this meteor (offset upwards so it trails behind)
+              const trail = this.add
+                .sprite(m.x, m.y - 10, "firetrail")
+                .setScale(2 * SCALE)
+                .setBlendMode(Phaser.BlendModes.ADD)
+                .setDepth(6)
+                .setAlpha(0.95);
+              try {
+                trail.play("fireAnim", true);
+              } catch (e) {}
+              m.setData("trail", trail);
+              // store an offset so update can position correctly (meteor visuals slightly above object)
+              m.setData("trailOffset", { x: 0, y: -10 });
+              m.setDepth(7);
+              // store maxHp and create an hp bar graphics ONLY for big meteors
+              const hp = m.getData("hp") || 1;
+              m.setData("maxHp", hp);
+              let hpBar = null;
+              try {
+                if (m.getData("big")) {
+                  hpBar = this.add.graphics().setDepth(12);
+                  m.setData("hpBar", hpBar);
+                }
+              } catch (e) {}
+              // attach floating label "WARNING" in red (will be skipped if labelsDisabled)
+              attachFloatingLabel(this, m, "WARNING", 0xff4b3a);
+              m.once("destroy", () => {
+                try {
+                  if (trail && trail.destroy) trail.destroy();
+                } catch (e) {}
+                try {
+                  const hb = m.getData && m.getData("hpBar");
+                  if (hb && hb.destroy) hb.destroy();
+                } catch (e) {}
+                try {
+                  const lb = m.getData && m.getData("label");
+                  if (lb && lb.destroy) lb.destroy();
+                } catch (e) {}
+              });
+            } catch (e) {}
+          }
+        }
+
+        // Draw a pixelated ring of small squares around (x,y) with given radius.
+        function drawPixelCircle(
+          graphics,
+          x,
+          y,
+          radius,
+          blockSize = 6,
+          color = 0xffffff,
+          alpha = 0.18
+        ) {
+          graphics.fillStyle(color, alpha);
+          const circumference = Math.max(1, 2 * Math.PI * radius);
+          const steps = Math.max(12, Math.round(circumference / blockSize));
+          for (let i = 0; i < steps; i++) {
+            const ang = (i / steps) * Math.PI * 2;
+            const px = Math.round(x + Math.cos(ang) * radius);
+            const py = Math.round(y + Math.sin(ang) * radius);
+            graphics.fillRect(
+              px - blockSize / 2,
+              py - blockSize / 2,
+              blockSize,
+              blockSize
+            );
+          }
+        }
+
+        // Draw a pixelated filled circle using square blocks (old-school style)
+        function drawPixelFilledCircle(
+          graphics,
+          x,
+          y,
+          radius,
+          blockSize = 8,
+          color = 0xfff2a8,
+          alpha = 0.92
+        ) {
+          graphics.fillStyle(color, alpha);
+          const bs = Math.max(2, Math.round(blockSize));
+          const minX = Math.floor(x - radius) - bs;
+          const maxX = Math.ceil(x + radius) + bs;
+          const minY = Math.floor(y - radius) - bs;
+          const maxY = Math.ceil(y + radius) + bs;
+          // iterate in a block grid and fill blocks whose centers fall inside the circle
+          for (let px = minX; px <= maxX; px += bs) {
+            for (let py = minY; py <= maxY; py += bs) {
+              const cx = px + bs / 2;
+              const cy = py + bs / 2;
+              if (Phaser.Math.Distance.Between(x, y, cx, cy) <= radius) {
+                graphics.fillRect(px - bs / 2, py - bs / 2, bs, bs);
+              }
+            }
+          }
+        }
+
+        // helper to lerp between two hex colors
+        function lerpColorHex(a, b, t) {
+          t = Phaser.Math.Clamp(t, 0, 1);
+          const ar = (a >> 16) & 0xff,
+            ag = (a >> 8) & 0xff,
+            ab = a & 0xff;
+          const br = (b >> 16) & 0xff,
+            bg = (b >> 8) & 0xff,
+            bb = b & 0xff;
+          const rr = Math.round(ar + (br - ar) * t);
+          const rg = Math.round(ag + (bg - ag) * t);
+          const rb = Math.round(ab + (bb - ab) * t);
+          return (rr << 16) | (rg << 8) | rb;
+        }
+
+        // Multi-color pixelated explosion: white (center), yellow (mid), red (outer), no fading between colors.
+        function drawThreeColorExplosion(graphics, x, y, curR, maxR) {
+          // colors
+          const white = 0xffffff;
+          const yellow = 0xfff2a8;
+          const red = 0xff4b3a;
+          // thresholds
+          const r1 = maxR * 0.33; // white max radius
+          const r2 = maxR * 0.66; // yellow max radius
+          const r3 = maxR; // red max radius
+
+          // compute radii that grow sequentially:
+          const rr_red = curR > r2 ? Math.min(curR, r3) : 0;
+          const rr_yellow = curR > r1 ? Math.min(curR, r2) : 0;
+          const rr_white = Math.min(curR, r1);
+
+          // Draw order: largest first (red), then yellow, then white so there is no blending and inner colors overlay
+          if (rr_red > 0)
+            drawPixelFilledCircle(graphics, x, y, rr_red, 8 * SCALE, red, 0.92);
+          if (rr_yellow > 0)
+            drawPixelFilledCircle(
+              graphics,
+              x,
+              y,
+              rr_yellow,
+              8 * SCALE,
+              yellow,
+              0.92
+            );
+          if (rr_white > 0)
+            drawPixelFilledCircle(
+              graphics,
+              x,
+              y,
+              rr_white,
+              8 * SCALE,
+              white,
+              0.92
+            );
+        }
+
+        // Visual-only explosion effect (pixelated filled circle + sparkle) updated to white->yellow->red.
+        function visualExplosion(
+          x,
+          y,
+          maxRadius = 64 * SCALE,
+          duration = EXPLOSION_DURATION
+        ) {
+          const ringGraphics = this.add.graphics().setDepth(19);
+
+          const flash = this.add
+            .image(x, y, "spark")
+            .setScale(1.6 * SCALE)
+            .setAlpha(0.95)
+            .setDepth(20);
+          this.tweens.add({
+            targets: flash,
+            alpha: 0,
+            duration: Math.max(160, Math.round(duration * 0.6)),
+            onComplete: () => {
+              try {
+                flash.destroy();
+              } catch (e) {}
+            },
+          });
+
+          // pixelated multi-color expansion (white->yellow->red), no color fading between bands
+          this.tweens.addCounter({
+            from: 8 * SCALE,
+            to: maxRadius,
+            duration: duration,
+            ease: "Cubic.Out",
+            onUpdate: (tween) => {
+              const curR = tween.getValue();
+              ringGraphics.clear();
+              drawThreeColorExplosion(ringGraphics, x, y, curR, maxRadius);
+            },
+            onComplete: () => {
+              try {
+                ringGraphics.destroy();
+              } catch (e) {}
+            },
+          });
+
+          // a few sparkles
+          for (let i = 0; i < 6; i++) {
+            const s = this.add.image(x, y, "spark").setDepth(18);
+            explosionGroup.add(s);
+            const ang = Phaser.Math.FloatBetween(0, Math.PI * 2);
+            const dist = Phaser.Math.Between(12 * SCALE, maxRadius * 0.9);
+            const tx = x + Math.cos(ang) * dist;
+            const ty = y + Math.sin(ang) * dist;
+            this.tweens.add({
+              targets: s,
+              x: tx,
+              y: ty,
+              alpha: 0,
+              duration: Phaser.Math.Between(
+                Math.max(120, duration - 80),
+                duration + 60
+              ),
+              onComplete: () => {
+                try {
+                  s.destroy();
+                } catch (e) {}
+              },
+            });
+          }
+
+          if (
+            window.FarcadeSDK &&
+            window.FarcadeSDK.singlePlayer &&
+            window.FarcadeSDK.singlePlayer.actions
+          ) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+        }
+
+        // small pickup effect that is explicitly NOT an explosion or chain trigger
+        function pickupEffect(x, y, scene) {
+          const flash = scene.add
+            .image(x, y, "spark")
+            .setScale(1.0 * SCALE)
+            .setAlpha(0.95)
+            .setDepth(22);
+          scene.tweens.add({
+            targets: flash,
+            alpha: 0,
+            scale: 1.8 * SCALE,
+            duration: 200,
+            ease: "Cubic.Out",
+            onComplete: () => {
+              try {
+                flash.destroy();
+              } catch (e) {}
+            },
+          });
+          // a couple of small particles for flair (visual only)
+          for (let i = 0; i < 4; i++) {
+            const s = scene.add.image(x, y, "spark").setDepth(21);
+            const ang = Phaser.Math.FloatBetween(0, Math.PI * 2);
+            const dist = Phaser.Math.Between(6 * SCALE, 18 * SCALE);
+            const tx = x + Math.cos(ang) * dist;
+            const ty = y + Math.sin(ang) * dist;
+            scene.tweens.add({
+              targets: s,
+              x: tx,
+              y: ty,
+              alpha: 0,
+              scale: 0.6,
+              duration: Phaser.Math.Between(180, 260),
+              onComplete: () => {
+                try {
+                  s.destroy();
+                } catch (e) {}
+              },
+            });
+          }
+          if (
+            window.FarcadeSDK &&
+            window.FarcadeSDK.singlePlayer &&
+            window.FarcadeSDK.singlePlayer.actions
+          ) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+        }
+
+        function fireHook(pointer) {
+          fireHookAt(pointer.worldX, pointer.worldY);
+        }
+
+        function fireHookAtCrosshair() {
+          fireHookAt.call(this, crossX, crossY);
+        }
+
+        function fireHookAt(targetX, targetY) {
+          if (hookActive) return;
+          hookActive = true;
+          hookReturning = false;
+
+          if (hook.body) {
+            try {
+              hook.body.enable = true;
+              hook.body.moves = true;
+              hook.body.immovable = false;
+              hook.body.setAllowGravity(false);
+            } catch (e) {}
+          }
+          this.sound.play("shoothook", { volume: 1 });
+          hook.setPosition(player.x + 10, player.y - 30 * SCALE);
+          hook.setActive(true).setVisible(true);
+          hook.body.setAllowGravity(false);
+
+          hook.setData(
+            "targetX",
+            Phaser.Math.Clamp(
+              targetX,
+              12 * SCALE,
+              this.scale.width - 12 * SCALE
+            )
+          );
+          hook.setData(
+            "targetY",
+            Phaser.Math.Clamp(
+              targetY,
+              12 * SCALE,
+              this.scale.height - 12 * SCALE
+            )
+          );
+          hook.setData("stuck", false);
+
+          const dir = new Phaser.Math.Vector2(
+            hook.getData("targetX") - player.x + 10,
+            hook.getData("targetY") - (player.y - 20 * SCALE)
+          ).normalize();
+          hook.setVelocity(dir.x * 800, dir.y * 800);
+        }
+
+        function recallHook() {
+          if (!hookActive || hookReturning) return;
+          hookReturning = true;
+          hook.setData("stuck", false);
+          if (hook.body) {
+            try {
+              hook.body.setVelocity(0, 0);
+              hook.body.moves = false;
+              hook.body.immovable = true;
+              hook.body.enable = false;
+            } catch (e) {}
+          }
+          hook.body.setAllowGravity(false);
+        }
+
+        function onHookHitsAmmo(hookSprite, ammoSprite) {
+          if (!hookActive) return;
+          // capture coords before disabling
+          const x = ammoSprite.x,
+            y = ammoSprite.y;
+          // remove the ammo (collected) and DO NOT trigger any explosion/chain
+          safeRemove(ammoSprite);
+          ammo = Math.min(10, ammo + 1);
+          this.sound.play("collect", { volume: 1 });
+          updateAmmoUI(this);
+          // lightweight pickup effect (no explosion)
+          pickupEffect(x, y, this);
+          // remove all floating labels when player claws ammo
+          clearAllFloatingLabels(this);
+          // After first ammo collected, disable labels for any new falling objects
+          if (!labelsDisabled) labelsDisabled = true;
+          hookReturning = true;
+        }
+
+        function onHookHitsArmour(hookSprite, armourSprite) {
+          if (!hookActive) return;
+          const x = armourSprite.x,
+            y = armourSprite.y;
+          safeRemove(armourSprite);
+          const prev = health;
+          health = Math.min(MAX_HEALTH, health + 1);
+          this.sound.play("collect", { volume: 1 });
+          // update rectangle health UI
+          updateHealthUI(this);
+
+          // lightweight pickup effect (no explosion)
+          pickupEffect(x, y, this);
+          score += 5;
+          scoreText.setText("Score: " + score);
+          // remove all floating labels when player claws health/armour
+          clearAllFloatingLabels(this);
+          hookReturning = true;
+        }
+
+        function tryThrowBomb() {
+          if (ammo <= 0) return;
+          ammo -= 1;
+
+          updateAmmoUI(this);
+          throwBomb.call(this);
+        }
+
+        function tryThrowBombAtCrosshair() {
+          if (ammo <= 0) return;
+          ammo -= 1;
+
+          updateAmmoUI(this);
+          throwBombAt.call(this, crossX, crossY);
+        }
+
+        function throwBomb() {
+          const b = bombGroup
+            .create(player.x - 10, player.y - 28 * SCALE, "bomb")
+            .setDepth(9);
+          b.setBounce(0.2);
+          // make initial thrown velocity 4x slower (divide by 4)
+          b.setVelocity(
+            Phaser.Math.Between(-40 * SCALE, 40 * SCALE) / 4,
+            (-280 * SCALE) / 4
+          );
+          try {
+            b.body.setDrag(30 * SCALE, 0);
+          } catch (e) {}
+          // mark exploded flag false initially
+          try {
+            b.setData("exploded", false);
+          } catch (e) {}
+          this.time.delayedCall(
+            900,
+            () => explode.call(this, b.x, b.y, b),
+            null,
+            this
+          );
+          if (
+            window.FarcadeSDK &&
+            window.FarcadeSDK.singlePlayer &&
+            window.FarcadeSDK.singlePlayer.actions
+          ) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+        }
+
+        function throwBombAt(targetX, targetY) {
+          const tx = Phaser.Math.Clamp(
+            targetX,
+            12 * SCALE,
+            this.scale.width - 12 * SCALE
+          );
+          const ty = Phaser.Math.Clamp(
+            targetY,
+            12 * SCALE,
+            this.scale.height - 12 * SCALE
+          );
+
+          const b = bombGroup
+            .create(player.x - 10, player.y - 28 * SCALE, "bomb")
+            .setDepth(9);
+          b.setBounce(0.2);
+          try {
+            b.setData("exploded", false);
+          } catch (e) {}
+          if (b.body) {
+            try {
+              b.body.enable = false;
+            } catch (e) {}
+          }
+
+          // make the targeted throw 4x slower by increasing tween duration
+          const slowDuration = 420 * 3;
+
+          this.tweens.add({
+            targets: b,
+            x: tx,
+            y: ty,
+            duration: slowDuration,
+            ease: "Cubic.Out",
+            onComplete: () => {
+              if (b && b.active) explode.call(this, b.x, b.y, b);
+            },
+          });
+          this.sound.play("shoot", { volume: 1 });
+          // also scale the fallback explosion timer so it doesn't fire before arrival
+          this.time.delayedCall(
+            900 * 4,
+            () => {
+              if (b && b.active) explode.call(this, b.x, b.y, b);
+            },
+            null,
+            this
+          );
+
+          if (
+            window.FarcadeSDK &&
+            window.FarcadeSDK.singlePlayer &&
+            window.FarcadeSDK.singlePlayer.actions
+          ) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+        }
+
+        function onBombTouchesMeteor(bombSprite, meteorSprite) {
+          explode.call(this, bombSprite.x, bombSprite.y, bombSprite);
+        }
+
+        // Explode now destroys meteors, ammo, armour and triggers chain reactions with other bombs.
+        function explode(x, y, bombSprite) {
+          // Prevent double-exploding the same bomb instance
+          if (
+            bombSprite &&
+            bombSprite.getData &&
+            bombSprite.getData("exploded")
+          )
+            return;
+          this.sound.play("explosion", { volume: 1 });
+          // Mark and remove the initiating bomb if present
+          if (bombSprite && bombSprite.active) {
+            try {
+              if (bombSprite.setData) bombSprite.setData("exploded", true);
+            } catch (e) {}
+            try {
+              safeRemove(bombSprite);
+            } catch (e) {}
+          } else if (bombSprite && bombSprite.setData) {
+            try {
+              bombSprite.setData("exploded", true);
+            } catch (e) {}
+          }
+
+          const flash = this.add
+            .image(x, y, "spark")
+            .setScale(2 * SCALE)
+            .setAlpha(0.9)
+            .setDepth(20);
+          this.tweens.add({
+            targets: flash,
+            alpha: 0,
+            duration: 180,
+            onComplete: () => flash.destroy(),
+          });
+
+          sparkle.call(this, x, y);
+
+          const ringGraphics = this.add.graphics().setDepth(19);
+          let destroyedCount = 0;
+
+          const scene = this;
+
+          // Track meteors processed by this explosion so a single expanding explosion cannot apply multiple hits
+          const processedMeteors = new Set();
+
+          // pixelated multi-color expansion: white->yellow->red (no fading between colors)
+          const tween = this.tweens.addCounter({
+            from: 8 * SCALE,
+            to: EXPLOSION_RADIUS,
+            duration: EXPLOSION_DURATION,
+            ease: "Cubic.Out",
+            onUpdate: (tween) => {
+              const curR = tween.getValue();
+              ringGraphics.clear();
+              // draw three-color rings based on current radius
+              drawThreeColorExplosion(
+                ringGraphics,
+                x,
+                y,
+                curR,
+                EXPLOSION_RADIUS
+              );
+
+              // Collect targets in radius
+              const toDestroyM = [];
+              const toDestroyAmmo = [];
+              const toDestroyArmour = [];
+              const toChainBombs = [];
+
+              meteorGroup.children.iterate((m) => {
+                if (!m || !m.active) return;
+                const d = Phaser.Math.Distance.Between(x, y, m.x, m.y);
+                if (d <= curR) toDestroyM.push(m);
+              });
+
+              ammoGroup.children.iterate((a) => {
+                if (!a || !a.active) return;
+                const d = Phaser.Math.Distance.Between(x, y, a.x, a.y);
+                if (d <= curR) toDestroyAmmo.push(a);
+              });
+
+              armourGroup.children.iterate((a) => {
+                if (!a || !a.active) return;
+                const d = Phaser.Math.Distance.Between(x, y, a.x, a.y);
+                if (d <= curR) toDestroyArmour.push(a);
+              });
+
+              bombGroup.children.iterate((b) => {
+                if (!b || !b.active) return;
+                const d = Phaser.Math.Distance.Between(x, y, b.x, b.y);
+                if (d <= curR) toChainBombs.push(b);
+              });
+
+              // Destroy meteors and award score, and cause them to explode (chain)
+              if (toDestroyM.length) {
+                for (let m of toDestroyM) {
+                  // skip if we've already processed this meteor for this explosion
+                  if (processedMeteors.has(m)) continue;
+                  // if meteor has hp > 1, damage it rather than destroy immediately
+                  try {
+                    const hp =
+                      m.getData && m.getData("hp") ? m.getData("hp") : 1;
+                    if (hp > 1) {
+                      // decrement HP, show damage feedback and keep it alive
+                      m.setData("hp", hp - 1);
+                      processedMeteors.add(m);
+                      // visual feedback: flash and slightly reduce size to indicate damage
+                      sparkle.call(scene, m.x, m.y);
+                      try {
+                        // shrink slightly to indicate damage
+                        const newW = Math.max(
+                          10,
+                          Math.round((m.displayWidth || BIG_METEOR_SIZE) * 0.8)
+                        );
+                        const newH = Math.max(
+                          10,
+                          Math.round((m.displayHeight || BIG_METEOR_SIZE) * 0.8)
+                        );
+                        m.setDisplaySize(newW, newH);
+                        // update physics body circle if possible
+                        if (m.body && m.setCircle) {
+                          try {
+                            m.setCircle(
+                              Math.max(6 * SCALE, m.displayWidth * 0.36)
+                            );
+                          } catch (e) {}
+                        }
+                        // tint a bit more red to show damage
+                        m.setTint(0xff8b6a);
+                        // briefly flash hp bar (if exists)
+                        const hb = m.getData && m.getData("hpBar");
+                        if (hb && hb.setAlpha) {
+                          try {
+                            hb.setAlpha(0.25);
+                            scene.tweens.add({
+                              targets: hb,
+                              alpha: 1,
+                              duration: 180,
+                              ease: "Cubic.Out",
+                            });
+                          } catch (e) {}
+                        }
+                      } catch (e) {}
+                      // no score until destroyed; no chain explosion
+                    } else {
+                      // fully destroy meteor
+                      const mx = m.x,
+                        my = m.y;
+                      processedMeteors.add(m);
+                      sparkle.call(scene, mx, my);
+                      try {
+                        safeRemove(m);
+                      } catch (e) {}
+                      destroyedCount++;
+                      // schedule meteor-triggered explosion slightly after to avoid nested conflicts
+                      scene.time.delayedCall(
+                        30,
+                        () => {
+                          try {
+                            explode.call(scene, mx, my, null);
+                          } catch (e) {}
+                        },
+                        null,
+                        scene
+                      );
+                      // award score depending on size
+                      const wasBig = m.getData && m.getData("big");
+                      score += wasBig ? BIG_METEOR_SCORE : NORMAL_METEOR_SCORE;
+                      scoreText.setText("Score: " + score);
+                    }
+                  } catch (e) {
+                    // fallback: destroy
+                    try {
+                      safeRemove(m);
+                    } catch (e) {}
+                  }
+                }
+              }
+
+              // Destroy ammo powerups (no pickup) and make them explode too (smaller chain)
+              if (toDestroyAmmo.length) {
+                for (let a of toDestroyAmmo) {
+                  const ax = a.x,
+                    ay = a.y;
+                  sparkle.call(scene, ax, ay);
+                  try {
+                    // destroy trail first if exists and hpBar
+                    safeRemove(a);
+                  } catch (e) {}
+                  // ammo creates a smaller explosion chain (use same explode to ensure chain reaction)
+                  scene.time.delayedCall(
+                    30,
+                    () => {
+                      try {
+                        explode.call(scene, ax, ay, null);
+                      } catch (e) {}
+                    },
+                    null,
+                    scene
+                  );
+                }
+              }
+
+              // Destroy armour powerups (no pickup) and make them explode too
+              if (toDestroyArmour.length) {
+                for (let a of toDestroyArmour) {
+                  const ax = a.x,
+                    ay = a.y;
+                  sparkle.call(scene, ax, ay);
+                  try {
+                    safeRemove(a);
+                  } catch (e) {}
+                  scene.time.delayedCall(
+                    30,
+                    () => {
+                      try {
+                        explode.call(scene, ax, ay, null);
+                      } catch (e) {}
+                    },
+                    null,
+                    scene
+                  );
+                }
+              }
+
+              // Chain other bombs (avoid re-triggering same bomb)
+              if (toChainBombs.length) {
+                for (let b of toChainBombs) {
+                  if (!b || !b.active) continue;
+                  // skip if we are the initiating bomb (already handled)
+                  if (bombSprite && b === bombSprite) continue;
+                  try {
+                    if (b.getData && b.getData("exploded")) continue;
+                    if (b.setData) b.setData("exploded", true);
+                  } catch (e) {}
+                  // explode chained bomb slightly later to avoid nested heavy recursion
+                  try {
+                    const bx = b.x,
+                      by = b.y;
+                    try {
+                      safeRemove(b);
+                    } catch (e) {}
+                    scene.time.delayedCall(
+                      30,
+                      () => explode.call(scene, bx, by, null),
+                      null,
+                      scene
+                    );
+                  } catch (e) {}
+                }
+              }
+            },
+            onComplete: () => {
+              ringGraphics.destroy();
+            },
+          });
+
+          // Final sweep after the visual expansion to catch lingering items within final radius
+          this.time.delayedCall(EXPLOSION_DURATION, () => {
+            let extra = 0;
+            meteorGroup.children.iterate((m) => {
+              if (!m || !m.active) return;
+              // skip meteors already processed by the expanding phase
+              if (processedMeteors.has(m)) return;
+              const d = Phaser.Math.Distance.Between(x, y, m.x, m.y);
+              if (d <= EXPLOSION_RADIUS) {
+                try {
+                  const hp = m.getData && m.getData("hp") ? m.getData("hp") : 1;
+                  if (hp > 1) {
+                    // damage but don't destroy
+                    m.setData("hp", hp - 1);
+                    processedMeteors.add(m);
+                    sparkle.call(this, m.x, m.y);
+                    try {
+                      const newW = Math.max(
+                        10,
+                        Math.round((m.displayWidth || BIG_METEOR_SIZE) * 0.8)
+                      );
+                      const newH = Math.max(
+                        10,
+                        Math.round((m.displayHeight || BIG_METEOR_SIZE) * 0.8)
+                      );
+                      m.setDisplaySize(newW, newH);
+                      if (m.body && m.setCircle) {
+                        try {
+                          m.setCircle(
+                            Math.max(6 * SCALE, m.displayWidth * 0.36)
+                          );
+                        } catch (e) {}
+                      }
+                      m.setTint(0xff8b6a);
+                    } catch (e) {}
+                  } else {
+                    const mx = m.x,
+                      my = m.y;
+                    processedMeteors.add(m);
+                    sparkle.call(this, mx, my);
+                    try {
+                      safeRemove(m);
+                    } catch (e) {}
+                    extra++;
+                    this.time.delayedCall(
+                      30,
+                      () => {
+                        try {
+                          explode.call(this, mx, my, null);
+                        } catch (e) {}
+                      },
+                      null,
+                      this
+                    );
+                    const wasBig = m.getData && m.getData("big");
+                    score += wasBig ? BIG_METEOR_SCORE : NORMAL_METEOR_SCORE;
+                    scoreText.setText("Score: " + score);
+                  }
+                } catch (e) {
+                  try {
+                    safeRemove(m);
+                  } catch (e) {}
+                }
+              }
+            });
+            if (extra > 0) {
+              score += extra * NORMAL_METEOR_SCORE; // extra accounted above already; keep fallback
+              scoreText.setText("Score: " + score);
+            }
+
+            // ammo & armour final sweep (destroy, no pickups) and chain
+            ammoGroup.children.iterate((a) => {
+              if (!a || !a.active) return;
+              const d = Phaser.Math.Distance.Between(x, y, a.x, a.y);
+              if (d <= EXPLOSION_RADIUS) {
+                const ax = a.x,
+                  ay = a.y;
+                sparkle.call(this, ax, ay);
+                try {
+                  safeRemove(a);
+                } catch (e) {}
+                this.time.delayedCall(
+                  30,
+                  () => {
+                    try {
+                      explode.call(this, ax, ay, null);
+                    } catch (e) {}
+                  },
+                  null,
+                  this
+                );
+              }
+            });
+            armourGroup.children.iterate((a) => {
+              if (!a || !a.active) return;
+              const d = Phaser.Math.Distance.Between(x, y, a.x, a.y);
+              if (d <= EXPLOSION_RADIUS) {
+                const ax = a.x,
+                  ay = a.y;
+                sparkle.call(this, ax, ay);
+                try {
+                  safeRemove(a);
+                } catch (e) {}
+                this.time.delayedCall(
+                  30,
+                  () => {
+                    try {
+                      explode.call(this, ax, ay, null);
+                    } catch (e) {}
+                  },
+                  null,
+                  this
+                );
+              }
+            });
+
+            // bombs final sweep -> chain
+            bombGroup.children.iterate((b) => {
+              if (!b || !b.active) return;
+              const d = Phaser.Math.Distance.Between(x, y, b.x, b.y);
+              if (d <= EXPLOSION_RADIUS) {
+                try {
+                  if (b.getData && b.getData("exploded")) return;
+                  if (b.setData) b.setData("exploded", true);
+                } catch (e) {}
+                const bx = b.x,
+                  by = b.y;
+                try {
+                  safeRemove(b);
+                } catch (e) {}
+                this.time.delayedCall(
+                  30,
+                  () => explode.call(this, bx, by, null),
+                  null,
+                  this
+                );
+              }
+            });
+          });
+          if (
+            window.FarcadeSDK &&
+            window.FarcadeSDK.singlePlayer &&
+            window.FarcadeSDK.singlePlayer.actions
+          ) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+        }
+
+        function sparkle(x, y) {
+          for (let i = 0; i < 8; i++) {
+            const s = this.add.image(x, y, "spark").setDepth(15);
+            explosionGroup.add(s);
+            const ang = Phaser.Math.FloatBetween(0, Math.PI * 2);
+            const dist = Phaser.Math.Between(18 * SCALE, 48 * SCALE);
+            const tx = x + Math.cos(ang) * dist;
+            const ty = y + Math.sin(ang) * dist;
+            this.tweens.add({
+              targets: s,
+              x: tx,
+              y: ty,
+              alpha: 0,
+              duration: Phaser.Math.Between(200, 360),
+              onComplete: () => s.destroy(),
+            });
+          }
+        }
+
+        // New: ammo hits player - explode and damage player
+        function onAmmoHitsPlayer(playerSprite, ammoSprite) {
+          if (!ammoSprite || !ammoSprite.active) return;
+          const x = ammoSprite.x,
+            y = ammoSprite.y;
+          try {
+            safeRemove(ammoSprite);
+          } catch (e) {}
+          // Trigger full explosion chain at that location
+          try {
+            explode.call(this, x, y, null);
+          } catch (e) {}
+          // Damage player
+          health -= 1;
+          updateHealthUI(this);
+          updateAmmoUI(this);
+          screenShake.call(this, 70);
+          if (health <= 0) doGameOver.call(this);
+        }
+
+        // New: armour hits player - explode and damage player (armour no longer heals on direct hit)
+        function onArmourHitsPlayer(playerSprite, armourSprite) {
+          if (!armourSprite || !armourSprite.active) return;
+          const x = armourSprite.x,
+            y = armourSprite.y;
+          try {
+            safeRemove(armourSprite);
+          } catch (e) {}
+          // Trigger full explosion chain at that location
+          try {
+            explode.call(this, x, y, null);
+          } catch (e) {}
+          // Damage player (armour falling on player is harmful)
+          health -= 1;
+          updateHealthUI(this);
+          updateAmmoUI(this);
+          screenShake.call(this, 70);
+          if (health <= 0) doGameOver.call(this);
+        }
+
+        function onMeteorHitsGround(playerSprite, meteorSprite) {
+          if (!meteorSprite.active) return;
+          const x = meteorSprite.x,
+            y = meteorSprite.y;
+          try {
+            safeRemove(meteorSprite);
+          } catch (e) {}
+          // visual explosion when meteor hits ground (matches EXPLOSION_DURATION) using multi-color scheme
+          visualExplosion.call(
+            this,
+            x,
+            y,
+            EXPLOSION_RADIUS * 0.6,
+            EXPLOSION_DURATION
+          );
+
+          health -= 1;
+          updateHealthUI(this);
+          updateAmmoUI(this);
+          screenShake.call(this, 90);
+          if (health <= 0) doGameOver.call(this);
+        }
+
+        function screenShake(duration = 120) {
+          this.cameras.main.shake(duration, 0.004 * SCALE);
+        }
+
+        function doGameOver() {
+          spawnInterval = 999999;
+          hookActive = false;
+          hookReturning = false;
+          hook.setVisible(false).setActive(false);
+
+          if (
+            window.FarcadeSDK &&
+            window.FarcadeSDK.singlePlayer &&
+            window.FarcadeSDK.singlePlayer.actions
+          ) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.hapticFeedback();
+            } catch (e) {}
+          }
+
+          if (
+            window.FarcadeSDK &&
+            window.FarcadeSDK.singlePlayer &&
+            window.FarcadeSDK.singlePlayer.actions
+          ) {
+            try {
+              window.FarcadeSDK.singlePlayer.actions.gameOver({ score: score });
+            } catch (e) {
+              console.warn("Farcade gameOver error", e);
+            }
+          } else {
+            this.scene.pause();
+          }
+        }
+
+        function resetGame() {
+          spawnInterval = DEFAULT_SPAWN;
+          lastSpawn = 0;
+          score = 0;
+          health = 3;
+          ammo = 0;
+          labelsDisabled = false;
+          try {
+            const sc = game.scene.getScene(game.scene.keys[0]);
+            if (sc) sc.scene.restart();
+            else game.scene.restart();
+          } catch (e) {
+            window.location.reload();
+          }
+        }
+
+        // Resize handling: ensure Phaser canvas and in-game elements remain fullscreen and reposition UI/player
+        window.addEventListener("resize", () => {
+          try {
+            const width = window.innerWidth;
+            const height = window.innerHeight;
+            if (game && game.scale) {
+              game.scale.resize(width, height);
+            }
+            const sc = game.scene && game.scene.scenes && game.scene.scenes[0];
+            if (!sc) return;
+            // reposition player to remain centered at bottom
+            try {
+              if (player && player.setPosition)
+                player.setPosition(
+                  sc.scale.width / 2,
+                  sc.scale.height - 20 * SCALE
+                );
+            } catch (e) {}
+            // reposition crosshair within bounds
+            try {
+              crossX = Phaser.Math.Clamp(
+                crossX,
+                SAFE_MARGIN,
+                sc.scale.width - SAFE_MARGIN
+              );
+              crossY = Phaser.Math.Clamp(
+                crossY,
+                SAFE_MARGIN,
+                sc.scale.height - SAFE_MARGIN
+              );
+              if (crosshair && crosshair.setPosition)
+                crosshair.setPosition(crossX, crossY);
+            } catch (e) {}
+            // reposition UI text elements using new scale width/height
+            try {
+              if (scoreText && scoreText.setPosition)
+                scoreText.setPosition(12 * SCALE, 12 * SCALE);
+              if (ammoText && ammoText.setPosition)
+                ammoText.setPosition(12 * SCALE, 40 * SCALE);
+              if (healthText && healthText.setPosition)
+                healthText.setPosition(12 * SCALE, 68 * SCALE);
+
+              if (infoText && infoText.setPosition)
+                infoText.setPosition(sc.scale.width / 2, sc.scale.height / 2);
+            } catch (e) {}
+            try {
+              // redraw health rectangles so they follow the (possibly moved) healthText anchor
+              if (typeof updateHealthUI === "function") updateHealthUI(sc);
+              if (typeof updateAmmoUI === "function") updateAmmoUI(sc);
+            } catch (e) {}
+          } catch (e) {}
+        });
+      })();
+    </script>
+  </body>
+</html>
